@@ -19,7 +19,7 @@ body { @apply bg-slate-50 text-slate-800 antialiased; }
   .chip { @apply inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold transition cursor-pointer select-none; }
   .chip-on { @apply chip border-indigo-600 bg-indigo-600 text-white; }
   .chip-off { @apply chip border-slate-300 bg-white text-slate-600 hover:border-indigo-400; }
-  .th { @apply px-3 py-2 text-start text-xs font-bold text-slate-500 whitespace-nowrap; }
+  .th { @apply px-3 py-2 text-right text-xs font-bold text-slate-500 whitespace-nowrap; }
   .td { @apply px-3 py-2.5 text-sm align-middle; }
   .page-title { @apply text-xl font-bold text-slate-900; }
 }

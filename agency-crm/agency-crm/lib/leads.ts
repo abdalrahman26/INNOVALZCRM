@@ -1,7 +1,6 @@
 import type { Lead, Profile } from './types';
-import { SERVICES, SOURCES, LOST_REASONS, findOpt, stageOf } from './constants';
+import { stageOf } from './constants';
 import { fmtDateTime } from './format';
-import type { Lang } from './lang';
 
 export const LEAD_SELECT = '*, assignee:profiles!leads_assigned_to_fkey(id, full_name)';
 
@@ -47,36 +46,33 @@ export function buildLeadsQuery(supabase: any, f: LeadFilters, meId: string, wit
   return q.order(sort, { ascending: sort === 'next_followup_at', nullsFirst: false });
 }
 
-export async function exportLeadsXlsx(rows: Lead[], team: Profile[], lang: Lang = 'ar', fileName?: string) {
+export async function exportLeadsXlsx(rows: Lead[], team: Profile[], fileName?: string) {
   const XLSX = await import('xlsx');
-  const en = lang === 'en';
-  const pick = (o: { ar: string; en: string }) => (en ? o.en : o.ar);
-  const H = (ar: string, e: string) => (en ? e : ar);
   const nameOf = (id: string | null) => team.find((t) => t.id === id)?.full_name ?? '';
   const data = rows.map((r) => ({
-    [H('الاسم', 'Name')]: r.full_name,
-    [H('الموبايل', 'Phone')]: r.phone ?? '',
-    [H('الإيميل', 'Email')]: r.email ?? '',
-    [H('الشركة / البراند', 'Company / Brand')]: r.company ?? '',
-    [H('المسمى الوظيفي', 'Job title')]: r.job_title ?? '',
-    [H('الخدمة', 'Service')]: r.service ? pick(findOpt(SERVICES, r.service)) : '',
-    [H('المصدر', 'Source')]: r.source ? pick(findOpt(SOURCES, r.source)) : '',
-    [H('الحملة', 'Campaign')]: r.campaign ?? '',
-    [H('الميزانية', 'Budget')]: r.budget ?? '',
-    [H('المدينة', 'City')]: r.city ?? '',
-    [H('المرحلة', 'Stage')]: pick(stageOf(r.status)),
-    [H('قيمة الصفقة', 'Deal value')]: r.deal_value ?? '',
-    [H('سبب الخسارة', 'Lost reason')]: r.lost_reason ? pick(findOpt(LOST_REASONS, r.lost_reason)) : '',
-    [H('المسؤول', 'Owner')]: r.assignee?.full_name ?? nameOf(r.assigned_to),
-    [H('تاريخ الإضافة', 'Created')]: fmtDateTime(r.created_at),
-    [H('تاريخ التوزيع', 'Assigned')]: fmtDateTime(r.assigned_at),
-    [H('أول تواصل', 'First contact')]: fmtDateTime(r.first_contact_at),
-    [H('آخر نشاط', 'Last activity')]: fmtDateTime(r.last_activity_at),
-    [H('المتابعة القادمة', 'Next follow-up')]: fmtDateTime(r.next_followup_at),
+    'الاسم': r.full_name,
+    'الموبايل': r.phone ?? '',
+    'الإيميل': r.email ?? '',
+    'الشركة / البراند': r.company ?? '',
+    'المسمى الوظيفي': r.job_title ?? '',
+    'الخدمة': r.service ?? '',
+    'المصدر': r.source ?? '',
+    'الحملة': r.campaign ?? '',
+    'الميزانية': r.budget ?? '',
+    'المدينة': r.city ?? '',
+    'المرحلة': stageOf(r.status).label,
+    'قيمة الصفقة': r.deal_value ?? '',
+    'سبب الخسارة': r.lost_reason ?? '',
+    'المسؤول': r.assignee?.full_name ?? nameOf(r.assigned_to),
+    'تاريخ الإضافة': fmtDateTime(r.created_at),
+    'تاريخ التوزيع': fmtDateTime(r.assigned_at),
+    'أول تواصل': fmtDateTime(r.first_contact_at),
+    'آخر نشاط': fmtDateTime(r.last_activity_at),
+    'المتابعة القادمة': fmtDateTime(r.next_followup_at),
   }));
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
-  wb.Workbook = { Views: [{ RTL: !en }] };
+  wb.Workbook = { Views: [{ RTL: true }] };
   XLSX.utils.book_append_sheet(wb, ws, 'Leads');
   const stamp = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, fileName ?? `leads-${stamp}.xlsx`);

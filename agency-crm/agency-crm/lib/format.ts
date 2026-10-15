@@ -1,32 +1,20 @@
-import type { Lang } from './lang';
+const LOCALE = 'ar-EG-u-nu-latn';
 
-let current: Lang = 'ar';
-export function setFormatLocale(l: Lang) {
-  current = l;
-}
+const dtf = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+const df = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short', year: 'numeric' });
+const rtf = new Intl.RelativeTimeFormat(LOCALE, { numeric: 'auto' });
 
-const LOCALES: Record<Lang, string> = { ar: 'ar-EG-u-nu-latn', en: 'en-US' };
-const cache = new Map<string, Intl.DateTimeFormat | Intl.RelativeTimeFormat | Intl.NumberFormat>();
-function get<T>(key: string, make: (loc: string) => T): T {
-  const k = `${current}:${key}`;
-  if (!cache.has(k)) cache.set(k, make(LOCALES[current]) as never);
-  return cache.get(k) as T;
-}
-const dtf = () => get('dt', (l) => new Intl.DateTimeFormat(l, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }));
-const df = () => get('d', (l) => new Intl.DateTimeFormat(l, { day: 'numeric', month: 'short', year: 'numeric' }));
-const rtf = () => get('rt', (l) => new Intl.RelativeTimeFormat(l, { numeric: 'auto' }));
-
-export const fmtDateTime = (s?: string | null) => (s ? dtf().format(new Date(s)) : '—');
-export const fmtDate = (s?: string | null) => (s ? df().format(new Date(s)) : '—');
+export const fmtDateTime = (s?: string | null) => (s ? dtf.format(new Date(s)) : '—');
+export const fmtDate = (s?: string | null) => (s ? df.format(new Date(s)) : '—');
 
 export function fromNow(s?: string | null) {
   if (!s) return '—';
   const diff = (new Date(s).getTime() - Date.now()) / 1000;
   const abs = Math.abs(diff);
-  if (abs < 60) return rtf().format(Math.round(diff), 'second');
-  if (abs < 3600) return rtf().format(Math.round(diff / 60), 'minute');
-  if (abs < 86400) return rtf().format(Math.round(diff / 3600), 'hour');
-  if (abs < 7 * 86400) return rtf().format(Math.round(diff / 86400), 'day');
+  if (abs < 60) return rtf.format(Math.round(diff), 'second');
+  if (abs < 3600) return rtf.format(Math.round(diff / 60), 'minute');
+  if (abs < 86400) return rtf.format(Math.round(diff / 3600), 'hour');
+  if (abs < 7 * 86400) return rtf.format(Math.round(diff / 86400), 'day');
   return fmtDateTime(s);
 }
 
