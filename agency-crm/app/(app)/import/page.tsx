@@ -10,7 +10,7 @@ import { useSupabase } from '@/lib/hooks';
 import { can } from '@/lib/perms';
 import { SERVICES, SOURCES, STAGES } from '@/lib/constants';
 import {
-  BASIC_KEYS, FIELDS, clean, guessMap, makeOwnerMatcher, parseDate, parseStatus, uuid, yesterday, type FieldKey,
+  BASIC_KEYS, FIELDS, clean, guessMap, guessNoteCols, makeOwnerMatcher, parseDate, parseStatus, uuid, yesterday, type FieldKey,
 } from '@/lib/import-utils';
 import { fmtNum, normalizePhone } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
@@ -21,6 +21,7 @@ type Prepared = {
   id: string;
   lead: Record<string, unknown>;
   comment: string;
+  statusRaw: string;
   owner: string | null;
   ownerRaw: string;
   worked: boolean;
@@ -45,13 +46,16 @@ export default function ImportPage() {
   const [leadsState, setLeadsState] = useState<'new' | 'worked'>('new');
   const [ownerPick, setOwnerPick] = useState<Record<string, string>>({}); // اسم السيلز في الشيت ← يوزر في السيستم
   const [updateExisting, setUpdateExisting] = useState(true);
+  const [noteCols, setNoteCols] = useState<string[]>([]); // كل الأعمدة اللي هتتحفظ كتعليقات
+  const [statusPick, setStatusPick] = useState<Record<string, string>>({}); // قيمة الحالة في الشيت ← مرحلة في السيستم
   const [workedStage, setWorkedStage] = useState('contacted');
   const [workedDate, setWorkedDate] = useState(yesterday);
   const [progress, setProgress] = useState(0);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{
     total: number; inserted: number; dupFile: number; dupDb: number; skipped: number;
-    assigned: number; comments: number; followups: number; worked: number; updated: number; warnings: string[];
+    assigned: number; comments: number; followups: number; worked: number; updated: number;
+    stageCounts: Record<string, number>; warnings: string[];
   } | null>(null);
 
   const canAssign = can(profile, 'assign');
@@ -64,7 +68,7 @@ export default function ImportPage() {
     let dupFile = 0;
     let skipped = 0;
     if (step !== 2 && !running) return { out, dupFile, skipped };
-    const mapped = new Set(Object.values(map).filter(Boolean));
+    const mapped = new Set([...Object.values(map).filter(Boolean), ...noteCols]);
     const seen = new Set<string>();
     const fallbackDate = workedDate ? new Date(`${workedDate}T12:00:00`) : null;
 
@@ -96,10 +100,15 @@ export default function ImportPage() {
       lead.extra = extra;
 
       const rawStatus = map.status ? clean(r[map.status]) : '';
-      const parsed = rawStatus ? parseStatus(rawStatus) : null;
-      let status = parsed ?? (leadsState === 'worked' ? workedStage : 'new');
-      if (rawStatus && !parsed && leadsState === 'new') status = 'contacted'; // فيه حالة مكتوبة = اتشغل عليه
+      // الحالة: من جدول ربط الحالات (لو اتغيرت) ← التعرّف التلقائي ← "تم التواصل" لأي حالة مكتوبة مش معروفة
+      const status = rawStatus
+        ? (statusPick[rawStatus] || parseStatus(rawStatus) || 'contacted')
+        : (leadsState === 'worked' ? workedStage : 'new');
       const worked = status !== 'new';
+
+      // التعليقات: كل الأعمدة المختارة في تعليق واحد (لو أكتر من عمود، كل سطر باسم العمود)
+      const parts = noteCols.map((h) => [h, clean(r[h])] as const).filter(([, v]) => v);
+      const comment = parts.length === 1 && noteCols.length === 1 ? parts[0][1] : parts.map(([h, v]) => `${h}: ${v}`).join('\n');
       const rowDate = map.created_date ? parseDate(r[map.created_date]) : null;
       const date = rowDate && rowDate.getTime() <= Date.now() ? rowDate : worked ? fallbackDate : null;
 
@@ -109,7 +118,8 @@ export default function ImportPage() {
       out.push({
         id: uuid(),
         lead: { ...lead, status },
-        comment: map.comment ? clean(r[map.comment]) : '',
+        comment,
+        statusRaw: rawStatus,
         owner,
         ownerRaw,
         worked,
@@ -118,14 +128,16 @@ export default function ImportPage() {
       });
     }
     return { out, dupFile, skipped };
-  }, [step, running, rows, map, headers, keepExtra, defSource, defService, leadsState, workedStage, workedDate, canAssign, matchOwner, ownerPick]);
+  }, [step, running, rows, map, headers, keepExtra, defSource, defService, leadsState, workedStage, workedDate, canAssign, matchOwner, ownerPick, noteCols, statusPick]);
 
   const summary = useMemo(() => {
     const p = prepared.out;
     const unknownOwners = new Map<string, number>();
     const ownerNames = new Map<string, number>();
+    const statusValues = new Map<string, number>();
     const perOwner = new Map<string, number>();
     p.forEach((x) => {
+      if (x.statusRaw) statusValues.set(x.statusRaw, (statusValues.get(x.statusRaw) ?? 0) + 1);
       if (x.ownerRaw) ownerNames.set(x.ownerRaw, (ownerNames.get(x.ownerRaw) ?? 0) + 1);
       if (x.ownerRaw && !x.owner) unknownOwners.set(x.ownerRaw, (unknownOwners.get(x.ownerRaw) ?? 0) + 1);
       if (x.owner) perOwner.set(x.owner, (perOwner.get(x.owner) ?? 0) + 1);
@@ -138,6 +150,7 @@ export default function ImportPage() {
       withOwner: p.filter((x) => x.owner).length,
       perOwner,
       ownerNames,
+      statusValues,
       unknownOwners,
     };
   }, [prepared]);
@@ -158,8 +171,11 @@ export default function ImportPage() {
       if (!data.length || !head.length) return toast.error(tr('الشيت فاضي', 'The sheet is empty'));
       setHeaders(head);
       setRows(data);
-      setMap(guessMap(head));
+      const gm = guessMap(head);
+      setMap(gm);
+      setNoteCols(guessNoteCols(head, gm));
       setOwnerPick({});
+      setStatusPick({});
       setFileName(f.name);
       setStep(2);
     } catch (e) {
@@ -243,18 +259,34 @@ export default function ImportPage() {
       setProgress(Math.round(((i + chunk.length) / Math.max(payload.length, 1)) * 70));
     }
     const done = items.filter((x) => inserted.has(x.id));
+    const stageCounts: Record<string, number> = {};
+    done.forEach((x) => { const st = x.lead.status as string; stageCounts[st] = (stageCounts[st] ?? 0) + 1; });
+
+    // حفظ التعليقات — ولو كود الداتابيز v2 مش متشغل، بنحفظها برضو (من غير علامة "من الشيت")
+    let oldDb = false;
+    const insertNotes = async (list: Record<string, unknown>[], onSaved?: (chunk: Record<string, unknown>[]) => void) => {
+      let saved = 0;
+      for (let i = 0; i < list.length; i += CHUNK) {
+        let chunk = list.slice(i, i + CHUNK);
+        let { error } = await supabase.from('lead_notes').insert(chunk);
+        if (error && /source|parent_id|column|schema cache/i.test(error.message)) {
+          chunk = chunk.map((n) => { const { source: _s, ...rest } = n; void _s; return rest; });
+          ({ error } = await supabase.from('lead_notes').insert(chunk));
+          if (!error) oldDb = true;
+        }
+        if (error) { warnings.push(tr('التعليقات: ', 'Comments: ') + error.message); break; }
+        saved += chunk.length;
+        onSaved?.(chunk);
+      }
+      return saved;
+    };
 
     // 2) التعليقات
-    let comments = 0;
     const notes = done.filter((x) => x.comment).map((x) => ({
       lead_id: x.id, user_id: profile.id, body: x.comment, source: 'import',
       ...(x.worked && x.date ? { created_at: x.date.toISOString() } : {}),
     }));
-    for (let i = 0; i < notes.length; i += CHUNK) {
-      const { error } = await supabase.from('lead_notes').insert(notes.slice(i, i + CHUNK));
-      if (error) { warnings.push(tr('التعليقات: ', 'Comments: ') + error.message); break; }
-      comments += Math.min(CHUNK, notes.length - i);
-    }
+    let comments = await insertNotes(notes);
     setProgress(80);
 
     // 3) المتابعات
@@ -313,7 +345,8 @@ export default function ImportPage() {
       setProgress(92);
 
       const reassign = new Map<string, string[]>();
-      const statusUpd = new Map<string, string[]>();
+      const statusUpd = new Map<string, string[]>(); // ليدز لسه "جديد" ← المرحلة من الشيت
+      const statusForce = new Map<string, string[]>(); // الشيت فيه حالة صريحة ← تتسجل حتى لو الليد مش جديد
       const touched = new Set<string>();
       const exNotes: { lead_id: string; body: string; created_at?: string }[] = [];
       const exFus: Record<string, unknown>[] = [];
@@ -327,8 +360,13 @@ export default function ImportPage() {
           touched.add(ex.id);
         }
         const st = x.lead.status as string;
-        if (x.worked && ex.status === 'new' && st !== 'new') {
+        if (x.statusRaw && st !== ex.status) {
+          statusForce.set(st, [...(statusForce.get(st) ?? []), ex.id]);
+          stageCounts[st] = (stageCounts[st] ?? 0) + 1;
+          touched.add(ex.id);
+        } else if (x.worked && ex.status === 'new' && st !== 'new') {
           statusUpd.set(st, [...(statusUpd.get(st) ?? []), ex.id]);
+          stageCounts[st] = (stageCounts[st] ?? 0) + 1;
           touched.add(ex.id);
         }
         if (x.comment) exNotes.push({ lead_id: ex.id, body: x.comment, ...(x.worked && x.date ? { created_at: x.date.toISOString() } : {}) });
@@ -355,6 +393,12 @@ export default function ImportPage() {
           if (error) warnings.push(error.message);
         }
       }
+      for (const [st, ids] of statusForce) {
+        for (let i = 0; i < ids.length; i += 500) {
+          const { error } = await supabase.from('leads').update({ status: st }).in('id', ids.slice(i, i + 500));
+          if (error) warnings.push(error.message);
+        }
+      }
       // التعليقات من غير تكرار (لو نفس التعليق اتضاف قبل كده مش هيتضاف تاني)
       if (exNotes.length) {
         const have = new Set<string>();
@@ -365,12 +409,7 @@ export default function ImportPage() {
         }
         const fresh = exNotes.filter((n) => !have.has(`${n.lead_id}|${n.body.trim()}`))
           .map((n) => ({ ...n, user_id: profile.id, source: 'import' }));
-        for (let i = 0; i < fresh.length; i += CHUNK) {
-          const { error } = await supabase.from('lead_notes').insert(fresh.slice(i, i + CHUNK));
-          if (error) { warnings.push(tr('التعليقات: ', 'Comments: ') + error.message); break; }
-          comments += Math.min(CHUNK, fresh.length - i);
-          fresh.slice(i, i + CHUNK).forEach((n) => touched.add(n.lead_id));
-        }
+        comments += await insertNotes(fresh, (chunk) => chunk.forEach((n) => touched.add(n.lead_id as string)));
       }
       for (let i = 0; i < exFus.length; i += CHUNK) {
         const { error } = await supabase.from('followups').insert(exFus.slice(i, i + CHUNK));
@@ -386,12 +425,19 @@ export default function ImportPage() {
       }
     }
 
+    if (oldDb) {
+      warnings.push(tr(
+        'التعليقات اتحفظت، بس كود الداتابيز الجديد (migration-v2.sql) لسه مش متشغل في Supabase — شغّله عشان علامة «من الشيت» والردود تشتغل.',
+        'Comments were saved, but the new database script (migration-v2.sql) has not been run in Supabase yet — run it to enable the “From sheet” tag and replies.',
+      ));
+    }
+
     const dupDb = items.length - done.length;
     if (batchId) await supabase.from('import_batches').update({ inserted: done.length, duplicates: dupDb + prepared.dupFile }).eq('id', batchId);
 
     setResult({
       total: rows.length, inserted: done.length, dupFile: prepared.dupFile, dupDb, skipped: prepared.skipped,
-      assigned, comments, followups, worked: done.filter((x) => x.worked).length, updated, warnings,
+      assigned, comments, followups, worked: done.filter((x) => x.worked).length, updated, stageCounts, warnings,
     });
     setProgress(100);
     setRunning(false);
@@ -404,7 +450,8 @@ export default function ImportPage() {
 
   const preview = rows.slice(0, 5);
   const activeUsers = team.filter((u) => u.is_active);
-  const visibleFields = FIELDS.filter((f) => f.key !== 'owner' || canAssign);
+  const visibleFields = FIELDS.filter((f) => f.key !== 'comment' && (f.key !== 'owner' || canAssign));
+  const toggleNoteCol = (h: string) => setNoteCols((c) => (c.includes(h) ? c.filter((x) => x !== h) : [...c, h]));
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -463,15 +510,44 @@ export default function ImportPage() {
           <div className="card overflow-x-auto p-4">
             <h2 className="mb-2 font-bold">{tr('معاينة أول 5 صفوف', 'Preview — first 5 rows')}</h2>
             <table className="w-full min-w-[600px] text-xs">
-              <thead><tr>{visibleFields.filter((f) => map[f.key]).map((f) => <th key={f.key} className="th">{L(f)}</th>)}</tr></thead>
+              <thead><tr>
+                {visibleFields.filter((f) => map[f.key]).map((f) => <th key={f.key} className="th">{L(f)}</th>)}
+                {noteCols.length > 0 && <th className="th">💬 {tr('التعليق', 'Comment')}</th>}
+              </tr></thead>
               <tbody>
                 {preview.map((r, i) => (
                   <tr key={i} className="border-t border-slate-100">
                     {visibleFields.filter((f) => map[f.key]).map((f) => <td key={f.key} className="td text-xs">{clean(r[map[f.key]])}</td>)}
+                    {noteCols.length > 0 && (
+                      <td className="td max-w-xs whitespace-pre-line text-xs">
+                        {noteCols.map((h) => clean(r[h])).filter(Boolean).join(' · ')}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* أعمدة التعليقات — ممكن أكتر من عمود */}
+          <div className="card space-y-3 p-4">
+            <div>
+              <h2 className="font-bold">💬 {tr('أعمدة التعليقات والملاحظات', 'Comment & note columns')}</h2>
+              <p className="text-xs text-slate-500">
+                {tr('علّم على كل عمود فيه ملاحظات — هيتحفظ كتعليق على الليد (لو أكتر من عمود، كل واحد في سطر باسمه).',
+                  'Tick every column that holds notes — it is saved as a comment on the lead (several columns become one line each).')}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {headers.map((h) => (
+                <button key={h} type="button" onClick={() => toggleNoteCol(h)} className={noteCols.includes(h) ? 'chip-on' : 'chip-off'}>
+                  {noteCols.includes(h) ? '✓ ' : ''}{h}
+                </button>
+              ))}
+            </div>
+            {noteCols.length === 0 && (
+              <p className="text-xs text-amber-700">{tr('مفيش عمود متعلّم — مش هيتحفظ أي تعليق.', 'No column ticked — no comments will be saved.')}</p>
+            )}
           </div>
 
           {/* حالة الليدز — جديدة ولا اتشغل عليها */}
@@ -505,10 +581,41 @@ export default function ImportPage() {
                 </div>
               </div>
             )}
-            {map.status && (
-              <p className="text-xs text-slate-500">
-                {tr('عمود الحالة متربط — كل صف هياخد حالته من الشيت (جديد، مهتم، فولو أب، اجتماع…).', 'Status column mapped — each row takes its own status from the sheet (new, interested, follow-up, meeting…).')}
-              </p>
+            {map.status && summary.statusValues.size > 0 && (
+              <div className="space-y-2">
+                <div className="text-sm font-semibold">{tr('ربط الحالات اللي في الشيت بمراحل السيستم', 'Match sheet statuses to pipeline stages')}</div>
+                <p className="text-xs text-slate-500">
+                  {tr('الحالات باللون الأصفر السيستم ما عرفهاش وحطها «تم التواصل» — غيّرها لو محتاج.',
+                    'Statuses in yellow were not recognized and default to “Contacted” — change them if needed.')}
+                </p>
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full min-w-[420px]">
+                    <thead className="bg-slate-50"><tr>
+                      <th className="th">{tr('الحالة في الشيت', 'Status in sheet')}</th>
+                      <th className="th">{tr('عدد الليدز', 'Leads')}</th>
+                      <th className="th">{tr('المرحلة في السيستم', 'Pipeline stage')}</th>
+                    </tr></thead>
+                    <tbody>
+                      {[...summary.statusValues.entries()].sort((a, b) => b[1] - a[1]).map(([raw, n]) => {
+                        const auto = parseStatus(raw);
+                        const current = statusPick[raw] || auto || 'contacted';
+                        const guessed = !statusPick[raw] && !auto;
+                        return (
+                          <tr key={raw} className={`border-t border-slate-100 ${guessed ? 'bg-amber-50' : ''}`}>
+                            <td className="td font-semibold">{raw}</td>
+                            <td className="td tabular-nums">{fmtNum(n)}</td>
+                            <td className="td">
+                              <select className="input py-1.5" value={current} onChange={(e) => setStatusPick((p) => ({ ...p, [raw]: e.target.value }))}>
+                                {STAGES.map((st) => <option key={st.value} value={st.value}>{L(st)}</option>)}
+                              </select>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
           </div>
 
@@ -565,7 +672,7 @@ export default function ImportPage() {
               <span className="rounded-lg bg-slate-100 px-2 py-1">{fmtNum(summary.total)} {tr('ليد', 'leads')}</span>
               <span className="rounded-lg bg-sky-50 px-2 py-1 text-sky-700">{fmtNum(summary.total - summary.worked)} {tr('جديد', 'new')}</span>
               <span className="rounded-lg bg-indigo-50 px-2 py-1 text-indigo-700">{fmtNum(summary.worked)} {tr('اتشغل عليه', 'worked on')}</span>
-              {map.comment && <span className="rounded-lg bg-amber-50 px-2 py-1 text-amber-800">{fmtNum(summary.withComment)} {tr('بتعليق', 'with comments')}</span>}
+              {noteCols.length > 0 && <span className="rounded-lg bg-amber-50 px-2 py-1 text-amber-800">{fmtNum(summary.withComment)} {tr('بتعليق', 'with comments')}</span>}
               {map.followup_date && <span className="rounded-lg bg-violet-50 px-2 py-1 text-violet-700">{fmtNum(summary.withFollowup)} {tr('بميعاد متابعة', 'with follow-up date')}</span>}
               {map.owner && canAssign && <span className="rounded-lg bg-emerald-50 px-2 py-1 text-emerald-700">{fmtNum(summary.withOwner)} {tr('ليهم سيلز', 'with a rep')}</span>}
             </div>
@@ -651,6 +758,13 @@ export default function ImportPage() {
             <Stat label={tr('متابعات', 'Follow-ups')} value={result.followups} tone="text-violet-600" />
             {result.updated > 0 && <Stat label={tr('ليدز موجودة اتحدّثت', 'Existing leads updated')} value={result.updated} tone="text-emerald-600" />}
           </div>
+          {Object.keys(result.stageCounts).length > 0 && (
+            <div className="flex flex-wrap justify-center gap-2 text-xs">
+              {STAGES.filter((st) => result.stageCounts[st.value]).map((st) => (
+                <span key={st.value} className={`rounded-full px-2.5 py-1 font-bold ${st.color}`}>{L(st)}: {fmtNum(result.stageCounts[st.value])}</span>
+              ))}
+            </div>
+          )}
           {result.warnings.length > 0 && (
             <div className="mx-auto max-w-2xl rounded-xl bg-amber-50 p-3 text-start text-xs text-amber-800">
               {result.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}

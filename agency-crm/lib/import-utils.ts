@@ -17,7 +17,7 @@ export const FIELDS = [
   // جديد
   { key: 'comment', ar: '💬 تعليق / ملاحظة', en: '💬 Comment / note', guesses: ['comment', 'comments', 'note', 'notes', 'remarks', 'ملاحظة', 'ملاحظات', 'تعليق', 'تعليقات', 'كومنت', 'الكومنت'] },
   { key: 'owner', ar: '👤 السيلز المسؤول', en: '👤 Sales owner', guesses: ['sales', 'sales name', 'salesman', 'sales rep', 'sales person', 'salesperson', 'owner', 'lead owner', 'assigned to', 'assigned', 'agent', 'rep', 'السيلز', 'سيلز', 'اسم السيلز', 'المسؤول', 'مسؤول', 'الموظف', 'الموظف المسؤول', 'المندوب', 'اسم المندوب', 'مسؤول المبيعات', 'البائع'] },
-  { key: 'status', ar: '📊 الحالة / المرحلة', en: '📊 Status / stage', guesses: ['status', 'stage', 'lead status', 'lead_status', 'الحالة', 'المرحلة', 'حالة العميل', 'الموقف'] },
+  { key: 'status', ar: '📊 الحالة / المرحلة', en: '📊 Status / stage', guesses: ['status', 'stage', 'lead status', 'lead_status', 'call status', 'pipeline', 'pipeline stage', 'الحالة', 'الحاله', 'المرحلة', 'المرحله', 'حالة العميل', 'حالة الليد', 'الموقف', 'النتيجة', 'النتيجه'] },
   { key: 'followup_date', ar: '⏰ ميعاد المتابعة', en: '⏰ Follow-up date', guesses: ['follow up date', 'followup date', 'follow-up date', 'next follow up', 'follow up', 'موعد المتابعة', 'ميعاد المتابعة', 'تاريخ المتابعة', 'المتابعة'] },
   { key: 'created_date', ar: '📅 تاريخ الليد', en: '📅 Lead date', guesses: ['created_time', 'created time', 'created at', 'created', 'date', 'التاريخ', 'تاريخ الإضافة', 'تاريخ الاضافة', 'تاريخ'] },
 ] as const;
@@ -68,14 +68,14 @@ export function guessMap(headers: string[]): Record<FieldKey, string> {
 
 export const STATUS_WORDS: [string, string[]][] = [
   ['new', ['جديد', 'new', 'fresh']],
-  ['no_answer', ['لم يرد', 'مردش', 'مبيردش', 'لا يرد', 'مش بيرد', 'no answer', 'not answered', 'no response', 'مغلق', 'مقفول']],
+  ['no_answer', ['لم يرد', 'مردش', 'مبيردش', 'لا يرد', 'مش بيرد', 'no answer', 'not answered', 'no response', 'busy', 'switched off', 'unreachable', 'not reachable', 'مغلق', 'مقفول', 'مشغول', 'خارج التغطيه', 'خارج التغطية']],
   ['won', ['تم التعاقد', 'تعاقد', 'won', 'closed won', 'deal', 'اشترك', 'دفع', 'مشترك']],
   ['lost', ['خسارة', 'lost', 'مش مهتم', 'غير مهتم', 'not interested', 'رفض', 'ملغي', 'cancel']],
   ['negotiation', ['تفاوض', 'negotiation', 'negotiating']],
   ['proposal', ['عرض سعر', 'تم إرسال عرض', 'proposal', 'quotation', 'quote', 'عرض']],
   ['meeting', ['اجتماع', 'meeting', 'ميتنج', 'ميتينج', 'زيارة']],
   ['interested', ['مهتم', 'interested', 'hot', 'warm']],
-  ['contacted', ['تم التواصل', 'contacted', 'follow up', 'followup', 'فولو', 'متابعه', 'متابعة', 'اتكلم', 'كلمته', 'تواصل', 'called']],
+  ['contacted', ['تم التواصل', 'contacted', 'follow up', 'followup', 'follow-up', 'call back', 'callback', 'pending', 'فولو', 'متابعه', 'متابعة', 'اتكلم', 'كلمته', 'تواصل', 'called', 'هيرجع', 'يرجعلي']],
 ];
 
 export function parseStatus(raw: string): string | null {
@@ -151,3 +151,17 @@ export const yesterday = () => {
   return d.toISOString().slice(0, 10);
 };
 
+
+/** كلمات بتدل إن العمود فيه ملاحظات/تعليقات */
+const NOTE_WORDS = [
+  'comment', 'comments', 'note', 'notes', 'remark', 'remarks', 'feedback', 'call notes', 'call result', 'details', 'description',
+  'ملاحظه', 'ملاحظات', 'ملاحظة', 'تعليق', 'تعليقات', 'كومنت', 'الكومنت', 'رد العميل', 'نتيجة المكالمة', 'نتيجه المكالمه', 'التفاصيل', 'تفاصيل', 'وصف', 'فيدباك',
+];
+
+/** يقترح كل الأعمدة اللي شكلها ملاحظات (ممكن يبقى أكتر من عمود) */
+export function guessNoteCols(headers: string[], map: Record<string, string>): string[] {
+  const n = (s: string) => norm(s.replace(/[_\-]+/g, ' '));
+  const words = NOTE_WORDS.map(n);
+  const taken = new Set(Object.entries(map).filter(([k, v]) => v && k !== 'comment').map(([, v]) => v));
+  return headers.filter((h) => !taken.has(h) && (h === map.comment || words.some((w) => n(h) === w || n(h).includes(w))));
+}
