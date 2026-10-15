@@ -52,6 +52,7 @@ export default function ImportPage() {
   const [workedDate, setWorkedDate] = useState(yesterday);
   const [progress, setProgress] = useState(0);
   const [running, setRunning] = useState(false);
+  const [importError, setImportError] = useState('');
   const [result, setResult] = useState<{
     total: number; inserted: number; dupFile: number; dupDb: number; skipped: number;
     assigned: number; comments: number; followups: number; worked: number; updated: number;
@@ -202,6 +203,7 @@ export default function ImportPage() {
     if (needsUsers && !users.length) return toast.error(tr('اختار السيلز اللي هتتوزع عليهم الليدز', 'Choose reps to assign the leads to'));
     if (leadsState === 'worked' && !workedDate) return toast.error(tr('حدد تاريخ الليدز القديمة', 'Set a date for the older leads'));
     setRunning(true);
+    setImportError('');
     setProgress(0);
     const warnings: string[] = [];
     const items = prepared.out;
@@ -248,10 +250,12 @@ export default function ImportPage() {
       const chunk = payload.slice(i, i + CHUNK);
       const { data, error } = await supabase
         .from('leads')
-        .upsert(chunk, { onConflict: 'phone_normalized', ignoreDuplicates: true })
+        .upsert(chunk, { onConflict: 'phone_normalized', ignoreDuplicates: true, defaultToNull: false })
         .select('id');
       if (error) {
-        toast.error(tr('حصل خطأ أثناء الاستيراد: ', 'Import error: ') + error.message);
+        const msg = tr('الاستيراد وقف ومتحفظش حاجة من الصفوف دي: ', 'Import stopped — these rows were not saved: ') + error.message;
+        toast.error(msg);
+        setImportError(msg);
         setRunning(false);
         return;
       }
@@ -268,10 +272,10 @@ export default function ImportPage() {
       let saved = 0;
       for (let i = 0; i < list.length; i += CHUNK) {
         let chunk = list.slice(i, i + CHUNK);
-        let { error } = await supabase.from('lead_notes').insert(chunk);
+        let { error } = await supabase.from('lead_notes').insert(chunk, { defaultToNull: false });
         if (error && /source|parent_id|column|schema cache/i.test(error.message)) {
           chunk = chunk.map((n) => { const { source: _s, ...rest } = n; void _s; return rest; });
-          ({ error } = await supabase.from('lead_notes').insert(chunk));
+          ({ error } = await supabase.from('lead_notes').insert(chunk, { defaultToNull: false }));
           if (!error) oldDb = true;
         }
         if (error) { warnings.push(tr('التعليقات: ', 'Comments: ') + error.message); break; }
@@ -302,7 +306,7 @@ export default function ImportPage() {
       };
     });
     for (let i = 0; i < fus.length; i += CHUNK) {
-      const { error } = await supabase.from('followups').insert(fus.slice(i, i + CHUNK));
+      const { error } = await supabase.from('followups').insert(fus.slice(i, i + CHUNK), { defaultToNull: false });
       if (error) { warnings.push(tr('المتابعات: ', 'Follow-ups: ') + error.message); break; }
       followups += Math.min(CHUNK, fus.length - i);
     }
@@ -412,7 +416,7 @@ export default function ImportPage() {
         comments += await insertNotes(fresh, (chunk) => chunk.forEach((n) => touched.add(n.lead_id as string)));
       }
       for (let i = 0; i < exFus.length; i += CHUNK) {
-        const { error } = await supabase.from('followups').insert(exFus.slice(i, i + CHUNK));
+        const { error } = await supabase.from('followups').insert(exFus.slice(i, i + CHUNK), { defaultToNull: false });
         if (error) { warnings.push(tr('المتابعات: ', 'Follow-ups: ') + error.message); break; }
         followups += Math.min(CHUNK, exFus.length - i);
       }
@@ -725,6 +729,10 @@ export default function ImportPage() {
               </span>
             </label>
           </div>
+
+          {importError && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">⚠️ {importError}</div>
+          )}
 
           <div className="flex items-center justify-between gap-3">
             <button className="btn-secondary" onClick={reset} disabled={running}>{tr('رجوع', 'Back')}</button>
