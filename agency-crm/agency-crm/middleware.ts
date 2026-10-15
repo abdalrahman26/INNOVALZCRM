@@ -21,17 +21,19 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // getClaims أسرع من getUser: بيتحقق من الجلسة محلياً لما يكون ممكن (من غير رحلة لسيرفر Supabase في كل ضغطة)
+  const { data } = await supabase.auth.getClaims();
+  const isLoggedIn = !!data?.claims?.sub;
   const path = request.nextUrl.pathname;
   const isPublic = path.startsWith('/login') || path.startsWith('/logout') || path.startsWith('/api/webhook');
 
-  if (!user && !isPublic) {
+  if (!isLoggedIn && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.search = '';
     return NextResponse.redirect(url);
   }
-  if (user && path.startsWith('/login')) {
+  if (isLoggedIn && path.startsWith('/login')) {
     const url = request.nextUrl.clone();
     url.pathname = '/';
     url.search = '';
@@ -41,5 +43,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)'],
 };
