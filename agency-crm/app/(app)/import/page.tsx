@@ -43,13 +43,15 @@ export default function ImportPage() {
   const [mode, setMode] = useState<'pool' | 'now' | 'hold'>('pool');
   const [users, setUsers] = useState<string[]>([]);
   const [leadsState, setLeadsState] = useState<'new' | 'worked'>('new');
+  const [ownerPick, setOwnerPick] = useState<Record<string, string>>({}); // اسم السيلز في الشيت ← يوزر في السيستم
+  const [updateExisting, setUpdateExisting] = useState(true);
   const [workedStage, setWorkedStage] = useState('contacted');
   const [workedDate, setWorkedDate] = useState(yesterday);
   const [progress, setProgress] = useState(0);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{
     total: number; inserted: number; dupFile: number; dupDb: number; skipped: number;
-    assigned: number; comments: number; followups: number; worked: number; warnings: string[];
+    assigned: number; comments: number; followups: number; worked: number; updated: number; warnings: string[];
   } | null>(null);
 
   const canAssign = can(profile, 'assign');
@@ -102,7 +104,7 @@ export default function ImportPage() {
       const date = rowDate && rowDate.getTime() <= Date.now() ? rowDate : worked ? fallbackDate : null;
 
       const ownerRaw = map.owner && canAssign ? clean(r[map.owner]) : '';
-      const owner = ownerRaw ? matchOwner(ownerRaw) : null;
+      const owner = ownerRaw ? (ownerRaw in ownerPick ? ownerPick[ownerRaw] || null : matchOwner(ownerRaw)) : null;
 
       out.push({
         id: uuid(),
@@ -116,13 +118,15 @@ export default function ImportPage() {
       });
     }
     return { out, dupFile, skipped };
-  }, [step, running, rows, map, headers, keepExtra, defSource, defService, leadsState, workedStage, workedDate, canAssign, matchOwner]);
+  }, [step, running, rows, map, headers, keepExtra, defSource, defService, leadsState, workedStage, workedDate, canAssign, matchOwner, ownerPick]);
 
   const summary = useMemo(() => {
     const p = prepared.out;
     const unknownOwners = new Map<string, number>();
+    const ownerNames = new Map<string, number>();
     const perOwner = new Map<string, number>();
     p.forEach((x) => {
+      if (x.ownerRaw) ownerNames.set(x.ownerRaw, (ownerNames.get(x.ownerRaw) ?? 0) + 1);
       if (x.ownerRaw && !x.owner) unknownOwners.set(x.ownerRaw, (unknownOwners.get(x.ownerRaw) ?? 0) + 1);
       if (x.owner) perOwner.set(x.owner, (perOwner.get(x.owner) ?? 0) + 1);
     });
@@ -133,6 +137,7 @@ export default function ImportPage() {
       withFollowup: p.filter((x) => x.followup).length,
       withOwner: p.filter((x) => x.owner).length,
       perOwner,
+      ownerNames,
       unknownOwners,
     };
   }, [prepared]);
@@ -154,6 +159,7 @@ export default function ImportPage() {
       setHeaders(head);
       setRows(data);
       setMap(guessMap(head));
+      setOwnerPick({});
       setFileName(f.name);
       setStep(2);
     } catch (e) {
@@ -288,12 +294,104 @@ export default function ImportPage() {
       }
     }
 
+    // 5) الليدز اللي كانت موجودة قبل كده: توزيعها على السيلز اللي في الشيت + تعليقها + حالتها
+    let updated = 0;
+    const dupItems = items.filter((x) => !inserted.has(x.id));
+    if (updateExisting && dupItems.length) {
+      const byPhone = new Map<string, Prepared>();
+      dupItems.forEach((x) => { const np = normalizePhone(x.lead.phone as string | null); if (np) byPhone.set(np, x); });
+      type Ex = { id: string; phone_normalized: string; assigned_to: string | null; status: string; next_followup_at: string | null };
+      const existing: Ex[] = [];
+      const phones = [...byPhone.keys()];
+      for (let i = 0; i < phones.length; i += 200) {
+        const { data, error } = await supabase.from('leads')
+          .select('id, phone_normalized, assigned_to, status, next_followup_at')
+          .in('phone_normalized', phones.slice(i, i + 200));
+        if (error) { warnings.push(error.message); break; }
+        existing.push(...((data as Ex[]) ?? []));
+      }
+      setProgress(92);
+
+      const reassign = new Map<string, string[]>();
+      const statusUpd = new Map<string, string[]>();
+      const touched = new Set<string>();
+      const exNotes: { lead_id: string; body: string; created_at?: string }[] = [];
+      const exFus: Record<string, unknown>[] = [];
+      for (const ex of existing) {
+        const x = byPhone.get(ex.phone_normalized);
+        if (!x) continue;
+        let target = x.owner;
+        if (!target && !ex.assigned_to && mode === 'now' && users.length) { target = users[rr % users.length]; rr++; }
+        if (target && target !== ex.assigned_to) {
+          reassign.set(target, [...(reassign.get(target) ?? []), ex.id]);
+          touched.add(ex.id);
+        }
+        const st = x.lead.status as string;
+        if (x.worked && ex.status === 'new' && st !== 'new') {
+          statusUpd.set(st, [...(statusUpd.get(st) ?? []), ex.id]);
+          touched.add(ex.id);
+        }
+        if (x.comment) exNotes.push({ lead_id: ex.id, body: x.comment, ...(x.worked && x.date ? { created_at: x.date.toISOString() } : {}) });
+        const fuOwner = target ?? ex.assigned_to;
+        if (x.followup && !ex.next_followup_at) {
+          exFus.push({
+            lead_id: ex.id,
+            user_id: fuOwner && (fuOwner === profile.id || canEditAll) ? fuOwner : profile.id,
+            due_at: x.followup.toISOString(), type: 'call', note: x.comment ? x.comment.slice(0, 200) : null,
+          });
+          touched.add(ex.id);
+        }
+      }
+
+      for (const [uid, ids] of reassign) {
+        for (let i = 0; i < ids.length; i += 1000) {
+          const { error } = await supabase.rpc('assign_leads', { p_lead_ids: ids.slice(i, i + 1000), p_user_ids: [uid] });
+          if (error) warnings.push(error.message); else assigned += Math.min(1000, ids.length - i);
+        }
+      }
+      for (const [st, ids] of statusUpd) {
+        for (let i = 0; i < ids.length; i += 500) {
+          const { error } = await supabase.from('leads').update({ status: st }).in('id', ids.slice(i, i + 500)).eq('status', 'new');
+          if (error) warnings.push(error.message);
+        }
+      }
+      // التعليقات من غير تكرار (لو نفس التعليق اتضاف قبل كده مش هيتضاف تاني)
+      if (exNotes.length) {
+        const have = new Set<string>();
+        const ids = [...new Set(exNotes.map((n) => n.lead_id))];
+        for (let i = 0; i < ids.length; i += 200) {
+          const { data } = await supabase.from('lead_notes').select('lead_id, body').in('lead_id', ids.slice(i, i + 200));
+          ((data as { lead_id: string; body: string }[]) ?? []).forEach((n) => have.add(`${n.lead_id}|${n.body.trim()}`));
+        }
+        const fresh = exNotes.filter((n) => !have.has(`${n.lead_id}|${n.body.trim()}`))
+          .map((n) => ({ ...n, user_id: profile.id, source: 'import' }));
+        for (let i = 0; i < fresh.length; i += CHUNK) {
+          const { error } = await supabase.from('lead_notes').insert(fresh.slice(i, i + CHUNK));
+          if (error) { warnings.push(tr('التعليقات: ', 'Comments: ') + error.message); break; }
+          comments += Math.min(CHUNK, fresh.length - i);
+          fresh.slice(i, i + CHUNK).forEach((n) => touched.add(n.lead_id));
+        }
+      }
+      for (let i = 0; i < exFus.length; i += CHUNK) {
+        const { error } = await supabase.from('followups').insert(exFus.slice(i, i + CHUNK));
+        if (error) { warnings.push(tr('المتابعات: ', 'Follow-ups: ') + error.message); break; }
+        followups += Math.min(CHUNK, exFus.length - i);
+      }
+      updated = touched.size;
+      if (existing.length < byPhone.size) {
+        warnings.push(tr(
+          `${byPhone.size - existing.length} ليد موجودين بس مش ظاهرين ليك (صلاحية «يشوف كل الليدز» مطلوبة لتحديثهم)`,
+          `${byPhone.size - existing.length} existing leads aren't visible to you ("view all leads" permission is needed to update them)`,
+        ));
+      }
+    }
+
     const dupDb = items.length - done.length;
     if (batchId) await supabase.from('import_batches').update({ inserted: done.length, duplicates: dupDb + prepared.dupFile }).eq('id', batchId);
 
     setResult({
       total: rows.length, inserted: done.length, dupFile: prepared.dupFile, dupDb, skipped: prepared.skipped,
-      assigned, comments, followups, worked: done.filter((x) => x.worked).length, warnings,
+      assigned, comments, followups, worked: done.filter((x) => x.worked).length, updated, warnings,
     });
     setProgress(100);
     setRunning(false);
@@ -306,7 +404,6 @@ export default function ImportPage() {
 
   const preview = rows.slice(0, 5);
   const activeUsers = team.filter((u) => u.is_active);
-  const nameOf = (id: string) => team.find((u) => u.id === id)?.full_name ?? id;
   const visibleFields = FIELDS.filter((f) => f.key !== 'owner' || canAssign);
 
   return (
@@ -472,21 +569,54 @@ export default function ImportPage() {
               {map.followup_date && <span className="rounded-lg bg-violet-50 px-2 py-1 text-violet-700">{fmtNum(summary.withFollowup)} {tr('بميعاد متابعة', 'with follow-up date')}</span>}
               {map.owner && canAssign && <span className="rounded-lg bg-emerald-50 px-2 py-1 text-emerald-700">{fmtNum(summary.withOwner)} {tr('ليهم سيلز', 'with a rep')}</span>}
             </div>
-            {summary.perOwner.size > 0 && (
-              <div className="text-xs text-slate-600">
-                {[...summary.perOwner.entries()].map(([id, n]) => `${nameOf(id)}: ${n}`).join(' · ')}
+            {map.owner && canAssign && summary.ownerNames.size > 0 && (
+              <div className="space-y-2 pt-2">
+                <div className="font-semibold">{tr('ربط أسماء السيلز اللي في الشيت', 'Match rep names from the sheet')}</div>
+                {summary.unknownOwners.size > 0 && (
+                  <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                    {tr('الأسماء اللي باللون الأحمر السيستم ما عرفهاش — اختار لها السيلز بنفسك، وإلا هتمشي حسب اختيار التوزيع.',
+                      'Names in red were not recognized — pick the rep yourself, otherwise they follow the assignment choice.')}
+                  </div>
+                )}
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full min-w-[420px]">
+                    <thead className="bg-slate-50"><tr>
+                      <th className="th">{tr('الاسم في الشيت', 'Name in sheet')}</th>
+                      <th className="th">{tr('عدد الليدز', 'Leads')}</th>
+                      <th className="th">{tr('السيلز في السيستم', 'Rep in system')}</th>
+                    </tr></thead>
+                    <tbody>
+                      {[...summary.ownerNames.entries()].sort((a, b) => b[1] - a[1]).map(([raw, n]) => {
+                        const current = raw in ownerPick ? ownerPick[raw] : (matchOwner(raw) ?? '');
+                        return (
+                          <tr key={raw} className={`border-t border-slate-100 ${current ? '' : 'bg-rose-50'}`}>
+                            <td className={`td font-semibold ${current ? '' : 'text-rose-700'}`}>{raw}</td>
+                            <td className="td tabular-nums">{fmtNum(n)}</td>
+                            <td className="td">
+                              <select className="input py-1.5" value={current} onChange={(e) => setOwnerPick((p) => ({ ...p, [raw]: e.target.value }))}>
+                                <option value="">{tr('— بدون (حسب اختيار التوزيع) —', '— None (follow assignment choice) —')}</option>
+                                {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                              </select>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
-            {summary.unknownOwners.size > 0 && (
-              <div className="flex items-start gap-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                <span>
-                  {tr('أسماء سيلز مش متعرّف عليها (هتمشي حسب اختيار التوزيع): ', 'Unrecognized rep names (will follow the assignment choice): ')}
-                  {[...summary.unknownOwners.entries()].slice(0, 12).map(([k, n]) => `«${k}» (${n})`).join('، ')}
-                  <br />{tr('اكتب اسم السيلز في الشيت زي ما هو في السيستم بالظبط، أو الإيميل بتاعه.', 'Write the rep name exactly as in the system, or their email.')}
+            <label className="flex items-start gap-2 pt-2 text-sm">
+              <input type="checkbox" className="mt-1 accent-indigo-600" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />
+              <span>
+                <b>{tr('لو الليد موجود قبل كده في السيستم: حدّثه', 'If a lead already exists: update it')}</b><br />
+                <span className="text-xs text-slate-500">
+                  {tr('يتوزّع على السيلز اللي في الشيت، ويتضاف تعليقه، وتتحدث حالته لو لسه «جديد». من غير ما يتكرر.',
+                    "Assign it to the sheet's rep, add its comment, and update its stage if still “New”. No duplicates are created.")}
                 </span>
-              </div>
-            )}
+              </span>
+            </label>
           </div>
 
           <div className="flex items-center justify-between gap-3">
@@ -519,6 +649,7 @@ export default function ImportPage() {
             <Stat label={tr('اتوزعت', 'Assigned')} value={result.assigned} tone="text-indigo-600" />
             <Stat label={tr('تعليقات', 'Comments')} value={result.comments} tone="text-amber-700" />
             <Stat label={tr('متابعات', 'Follow-ups')} value={result.followups} tone="text-violet-600" />
+            {result.updated > 0 && <Stat label={tr('ليدز موجودة اتحدّثت', 'Existing leads updated')} value={result.updated} tone="text-emerald-600" />}
           </div>
           {result.warnings.length > 0 && (
             <div className="mx-auto max-w-2xl rounded-xl bg-amber-50 p-3 text-start text-xs text-amber-800">

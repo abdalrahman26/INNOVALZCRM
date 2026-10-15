@@ -16,7 +16,7 @@ export const FIELDS = [
   { key: 'city', ar: 'المدينة', en: 'City', guesses: ['city', 'المدينة', 'مدينة', 'country', 'الدولة', 'المحافظة'] },
   // جديد
   { key: 'comment', ar: '💬 تعليق / ملاحظة', en: '💬 Comment / note', guesses: ['comment', 'comments', 'note', 'notes', 'remarks', 'ملاحظة', 'ملاحظات', 'تعليق', 'تعليقات', 'كومنت', 'الكومنت'] },
-  { key: 'owner', ar: '👤 السيلز المسؤول', en: '👤 Sales owner', guesses: ['sales', 'sales name', 'salesman', 'owner', 'assigned to', 'agent', 'السيلز', 'المسؤول', 'اسم السيلز', 'الموظف', 'المندوب', 'مسؤول المبيعات'] },
+  { key: 'owner', ar: '👤 السيلز المسؤول', en: '👤 Sales owner', guesses: ['sales', 'sales name', 'salesman', 'sales rep', 'sales person', 'salesperson', 'owner', 'lead owner', 'assigned to', 'assigned', 'agent', 'rep', 'السيلز', 'سيلز', 'اسم السيلز', 'المسؤول', 'مسؤول', 'الموظف', 'الموظف المسؤول', 'المندوب', 'اسم المندوب', 'مسؤول المبيعات', 'البائع'] },
   { key: 'status', ar: '📊 الحالة / المرحلة', en: '📊 Status / stage', guesses: ['status', 'stage', 'lead status', 'lead_status', 'الحالة', 'المرحلة', 'حالة العميل', 'الموقف'] },
   { key: 'followup_date', ar: '⏰ ميعاد المتابعة', en: '⏰ Follow-up date', guesses: ['follow up date', 'followup date', 'follow-up date', 'next follow up', 'follow up', 'موعد المتابعة', 'ميعاد المتابعة', 'تاريخ المتابعة', 'المتابعة'] },
   { key: 'created_date', ar: '📅 تاريخ الليد', en: '📅 Lead date', guesses: ['created_time', 'created time', 'created at', 'created', 'date', 'التاريخ', 'تاريخ الإضافة', 'تاريخ الاضافة', 'تاريخ'] },
@@ -52,9 +52,13 @@ export function guessMap(headers: string[]): Record<FieldKey, string> {
     map[f.key] = hit ?? '';
     if (hit) used.add(hit);
   }
-  for (const f of FIELDS) {
+  // التطابق الجزئي: أعمدة السيلز والتعليق والحالة والتواريخ الأول، عشان عمود "Sales Name" ميتاخدش كاسم العميل
+  const PRIORITY = ['owner', 'comment', 'status', 'followup_date', 'created_date'];
+  const GENERIC = new Set(['name', 'date', 'title', 'mail', 'رقم', 'اسم', 'تاريخ']);
+  const ordered = [...FIELDS].sort((a, b) => (PRIORITY.includes(b.key) ? 1 : 0) - (PRIORITY.includes(a.key) ? 1 : 0));
+  for (const f of ordered) {
     if (map[f.key]) continue;
-    const g = f.guesses.map(n).filter((x) => x.length > 3);
+    const g = f.guesses.map(n).filter((x) => x.length > 3 && !GENERIC.has(x));
     const hit = headers.find((h) => !used.has(h) && g.some((x) => n(h).includes(x)));
     map[f.key] = hit ?? '';
     if (hit) used.add(hit);

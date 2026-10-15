@@ -15,10 +15,19 @@ import { can } from '@/lib/perms';
 import { SERVICES, SOURCES, STAGES, findOpt } from '@/lib/constants';
 import { fmtDateTime, fmtNum, fromNow, waLink } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
-import { EMPTY_FILTERS, buildLeadsQuery, exportLeadsXlsx, type LeadFilters } from '@/lib/leads';
+import { EMPTY_FILTERS, SORTS, SORT_OPTIONS, buildLeadsQuery, exportLeadsXlsx, type LeadFilters } from '@/lib/leads';
 import type { Lead } from '@/lib/types';
 
 const PAGE = 50;
+const SORT_KEY = 'crm_leads_sort';
+function readSort() {
+  try {
+    const v = localStorage.getItem(SORT_KEY);
+    return v && v in SORTS ? v : 'created_at';
+  } catch {
+    return 'created_at';
+  }
+}
 
 function LeadsInner() {
   const { profile, team, openLead } = useApp();
@@ -30,12 +39,12 @@ function LeadsInner() {
   const canExport = can(profile, 'export');
   const canDelete = can(profile, 'delete');
 
-  const [filters, setFilters] = useState<LeadFilters>({
+  const [filters, setFilters] = useState<LeadFilters>(() => ({
     ...EMPTY_FILTERS,
     status: sp.get('status') ?? '',
     assigned: sp.get('assigned') ?? '',
     followup: sp.get('followup') ?? '',
-  });
+  }));
   const [qInput, setQInput] = useState('');
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<Lead[]>([]);
@@ -46,6 +55,14 @@ function LeadsInner() {
   const [showAssign, setShowAssign] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  // الترتيب اللي اليوزر اختاره آخر مرة (محفوظ على جهازه)
+  useEffect(() => {
+    const saved = readSort();
+    setFilters((f) => (f.sort === saved ? f : { ...f, sort: saved }));
+    setReady(true);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -65,13 +82,15 @@ function LeadsInner() {
     setLoading(false);
   }, [supabase, filters, page, profile.id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (ready) load(); }, [load, ready]);
 
   const refreshSilently = useCallback(() => load(true), [load]);
 
   const setF = (k: keyof LeadFilters) => (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setFilters((f) => ({ ...f, [k]: e.target.value }));
+    const v = e.target.value;
+    setFilters((f) => ({ ...f, [k]: v }));
     setPage(1);
+    if (k === 'sort') { try { localStorage.setItem(SORT_KEY, v); } catch { /* ignore */ } }
   };
 
   const toggle = (id: string) => setSelected((s) => {
@@ -147,7 +166,7 @@ function LeadsInner() {
         </div>
       </div>
 
-      <div className="card grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-7">
+      <div className="card grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <div className="relative lg:col-span-2">
           <Search size={16} className="absolute start-3 top-2.5 text-slate-400" />
           <input className="input ps-9" placeholder={tr('بحث بالاسم، الرقم، الشركة…', 'Search name, phone, company…')} value={qInput} onChange={(e) => setQInput(e.target.value)} />
@@ -167,20 +186,17 @@ function LeadsInner() {
           <option value="today">{tr('متابعة النهارده', 'Due today')}</option>
           <option value="none">{tr('بدون متابعة', 'No follow-up')}</option>
         </select>
-        {viewAll ? (
+        {viewAll && (
           <select className="input" value={filters.assigned} onChange={setF('assigned')}>
             <option value="">{tr('كل السيلز', 'All reps')}</option>
             <option value="me">{tr('ليدزي أنا', 'My leads')}</option>
             <option value="none">{tr('غير موزعة', 'Unassigned')}</option>
             {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
           </select>
-        ) : (
-          <select className="input" value={filters.sort} onChange={setF('sort')}>
-            <option value="created_at">{tr('الأحدث', 'Newest')}</option>
-            <option value="next_followup_at">{tr('أقرب متابعة', 'Next follow-up')}</option>
-            <option value="last_activity_at">{tr('آخر نشاط', 'Last activity')}</option>
-          </select>
         )}
+        <select className="input" value={filters.sort} onChange={setF('sort')} aria-label={tr('الترتيب', 'Sort')}>
+          {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>↕ {L(o)}</option>)}
+        </select>
       </div>
 
       {selected.size > 0 && (

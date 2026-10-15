@@ -43,9 +43,29 @@ export function buildLeadsQuery(supabase: any, f: LeadFilters, meId: string, wit
     q = q.gte('next_followup_at', now.toISOString()).lte('next_followup_at', end.toISOString());
   } else if (f.followup === 'none') q = q.is('next_followup_at', null);
 
-  const sort = f.sort || 'created_at';
-  return q.order(sort, { ascending: sort === 'next_followup_at', nullsFirst: false });
+  const [col, asc] = SORTS[f.sort] ?? SORTS.created_at;
+  q = q.order(col, { ascending: asc, nullsFirst: false });
+  return col === 'created_at' ? q : q.order('created_at', { ascending: false });
 }
+
+/** ترتيب الليدز: [العمود, تصاعدي؟] */
+export const SORTS: Record<string, [string, boolean]> = {
+  created_at: ['created_at', false], // الأحدث الأول
+  created_asc: ['created_at', true], // الأقدم الأول
+  name_asc: ['full_name', true], // أبجدي أ ← ي
+  name_desc: ['full_name', false], // أبجدي ي ← أ
+  next_followup_at: ['next_followup_at', true], // أقرب متابعة
+  last_activity_at: ['last_activity_at', false], // آخر نشاط
+};
+
+export const SORT_OPTIONS = [
+  { value: 'created_at', ar: 'الأحدث الأول', en: 'Newest first' },
+  { value: 'created_asc', ar: 'الأقدم الأول', en: 'Oldest first' },
+  { value: 'name_asc', ar: 'الاسم (أ ← ي)', en: 'Name (A → Z)' },
+  { value: 'name_desc', ar: 'الاسم (ي ← أ)', en: 'Name (Z → A)' },
+  { value: 'next_followup_at', ar: 'أقرب متابعة', en: 'Next follow-up' },
+  { value: 'last_activity_at', ar: 'آخر نشاط', en: 'Last activity' },
+];
 
 export async function exportLeadsXlsx(rows: Lead[], team: Profile[], lang: Lang = 'ar', fileName?: string) {
   const XLSX = await import('xlsx');
