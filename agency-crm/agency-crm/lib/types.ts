@@ -14,6 +14,7 @@ export interface Profile {
   can_assign: boolean;
   can_delete: boolean;
   can_view_all: boolean;
+  locale?: string | null;
   created_at: string;
 }
 
@@ -51,6 +52,8 @@ export interface Note {
   lead_id: string;
   user_id: string | null;
   body: string;
+  parent_id?: string | null;
+  source?: string | null;
   created_at: string;
 }
 
@@ -84,6 +87,7 @@ export interface AppNotification {
   body: string | null;
   lead_id: string | null;
   read: boolean;
+  data?: Record<string, string> | null;
   created_at: string;
 }
 
