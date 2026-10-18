@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { Check, ExternalLink, Mail, MessageCircle, Phone } from 'lucide-react';
+import { Check, ExternalLink, Mail, MessageCircle, Pencil, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Modal, Spinner, StageBadge } from './ui';
 import LogContact from './LogContact';
 import LeadComments from './LeadComments';
+import LeadInfoForm from './LeadInfoForm';
 import { useSupabase } from '@/lib/hooks';
 import { FOLLOWUP_TYPES, SERVICES, SOURCES, findOpt } from '@/lib/constants';
 import { fmtDateTime, fromNow, waLink } from '@/lib/format';
@@ -25,6 +26,7 @@ export default function LeadQuickModal({
   const [fus, setFus] = useState<Followup[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(async () => {
     const [l, n, f] = await Promise.all([
@@ -85,8 +87,17 @@ export default function LeadQuickModal({
             {lead.phone && <a href={`tel:${lead.phone}`} className="btn-secondary btn-sm"><Phone size={14} /> {tr('اتصال', 'Call')}</a>}
             {wa && <a href={wa} target="_blank" rel="noreferrer" className="btn-success btn-sm"><MessageCircle size={14} /> {tr('واتساب', 'WhatsApp')}</a>}
             {lead.email && <a href={`mailto:${lead.email}`} className="btn-secondary btn-sm"><Mail size={14} /></a>}
+            <button className={editing ? 'chip-on' : 'btn-secondary btn-sm'} onClick={() => setEditing((e) => !e)}>
+              <Pencil size={14} /> {tr('تعديل البيانات', 'Edit details')}
+            </button>
             <Link href={`/leads/${lead.id}`} className="btn-ghost btn-sm"><ExternalLink size={14} /> {tr('الصفحة الكاملة', 'Full page')}</Link>
           </div>
+
+          {editing && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3">
+              <LeadInfoForm lead={lead} onSaved={changed} bare onDone={() => setEditing(false)} />
+            </div>
+          )}
 
           {fus.length > 0 && (
             <div className="space-y-1.5">

@@ -3,11 +3,12 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowRight, CalendarClock, Check, History, Mail, MessageCircle, Phone, Save, Trash2, X } from 'lucide-react';
+import { ArrowRight, CalendarClock, Check, History, Mail, MessageCircle, Phone, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '@/components/AppContext';
 import LogContact from '@/components/LogContact';
 import LeadComments from '@/components/LeadComments';
+import LeadInfoForm, { infoLabel } from '@/components/LeadInfoForm';
 import { Empty, PageLoader, StageBadge } from '@/components/ui';
 import { useSupabase } from '@/lib/hooks';
 import { can } from '@/lib/perms';
@@ -22,7 +23,7 @@ export default function LeadPage() {
   const { profile, team } = useApp();
   const supabase = useSupabase();
   const router = useRouter();
-  const { tr, L } = useI18n();
+  const { tr, L, lang } = useI18n();
   const [lead, setLead] = useState<Lead | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [fus, setFus] = useState<Followup[]>([]);
@@ -156,6 +157,16 @@ export default function LeadPage() {
                       `غيّر المرحلة من «${stageOf(a.data.from).ar}» إلى «${stageOf(a.data.to).ar}»`,
                       `changed stage from “${stageOf(a.data.from).en}” to “${stageOf(a.data.to).en}”`,
                     )}
+                    {a.type === 'info' && (
+                      <>
+                        {tr('عدّل بيانات العميل', 'edited client details')}
+                        {Object.entries(a.data as unknown as Record<string, { from: string | null; to: string | null }>).map(([k, ch]) => (
+                          <span key={k} className="mt-0.5 block text-[11px]">
+                            {infoLabel(k, tr)}: <s className="text-slate-400">{ch?.from || '—'}</s> {lang === 'en' ? '→' : '←'} <b className="text-slate-700">{ch?.to || '—'}</b>
+                          </span>
+                        ))}
+                      </>
+                    )}
                     {a.type === 'assigned' && (a.data.to
                       ? <>{tr('حوّل الليد إلى', 'assigned the lead to')} <b>{nameOf(a.data.to)}</b></>
                       : tr('رجّع الليد للتوزيع', 'returned the lead to distribution'))}
@@ -196,7 +207,7 @@ export default function LeadPage() {
             </dl>
           </div>
 
-          <LeadInfo lead={lead} onSaved={load} />
+          <LeadInfoForm lead={lead} onSaved={load} />
 
           {lead.extra && Object.keys(lead.extra).length > 0 && (
             <div className="card p-4">
@@ -213,63 +224,6 @@ export default function LeadPage() {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function LeadInfo({ lead, onSaved }: { lead: Lead; onSaved: () => void }) {
-  const supabase = useSupabase();
-  const { tr, L } = useI18n();
-  const fields = ['full_name', 'phone', 'email', 'company', 'job_title', 'service', 'source', 'campaign', 'budget', 'city'] as const;
-  type F = Record<(typeof fields)[number], string>;
-  const init = () => Object.fromEntries(fields.map((k) => [k, (lead[k] as string | null) ?? ''])) as F;
-  const [f, setF] = useState<F>(init);
-  const [saving, setSaving] = useState(false);
-  useEffect(() => { setF(init()); }, [lead]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const labels: Record<string, string> = {
-    full_name: tr('الاسم', 'Name'), phone: tr('الموبايل', 'Phone'), email: tr('الإيميل', 'Email'),
-    company: tr('الشركة / البراند', 'Company / Brand'), job_title: tr('المسمى الوظيفي', 'Job title'),
-    service: tr('الخدمة', 'Service'), source: tr('المصدر', 'Source'), campaign: tr('الحملة', 'Campaign'),
-    budget: tr('الميزانية', 'Budget'), city: tr('المدينة', 'City'),
-  };
-  const dirty = fields.some((k) => (f[k] || '') !== ((lead[k] as string | null) ?? ''));
-
-  async function save() {
-    if (saving) return;
-    if (!f.full_name.trim()) return toast.error(tr('الاسم مطلوب', 'Name is required'));
-    setSaving(true);
-    const patch: Record<string, string | null> = {};
-    fields.forEach((k) => { patch[k] = f[k].trim() || null; });
-    const { error } = await supabase.from('leads').update(patch).eq('id', lead.id);
-    setSaving(false);
-    if (error) return toast.error(error.code === '23505' ? tr('الرقم ده موجود في ليد تاني', 'This phone exists on another lead') : error.message);
-    toast.success(tr('تم حفظ البيانات', 'Saved'));
-    onSaved();
-  }
-
-  return (
-    <div className="card space-y-3 p-4">
-      <h2 className="font-bold">{tr('بيانات العميل', 'Client details')}</h2>
-      {fields.map((k) => {
-        const list = k === 'service' ? SERVICES : k === 'source' ? SOURCES : null;
-        return (
-          <div key={k}>
-            <label className="label">{labels[k]}</label>
-            {list ? (
-              <select className="input" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })}>
-                <option value="">—</option>
-                {list.map((s) => <option key={s.value} value={s.value}>{L(s)}</option>)}
-                {f[k] && !list.some((s) => s.value === f[k]) && <option value={f[k]}>{f[k]}</option>}
-              </select>
-            ) : (
-              <input className="input" dir={k === 'phone' || k === 'email' ? 'ltr' : undefined} value={f[k]}
-                onChange={(e) => setF({ ...f, [k]: e.target.value })} />
-            )}
-          </div>
-        );
-      })}
-      {dirty && <button className="btn-primary w-full" disabled={saving} onClick={save}><Save size={16} /> {tr('حفظ التعديلات', 'Save changes')}</button>}
     </div>
   );
 }
