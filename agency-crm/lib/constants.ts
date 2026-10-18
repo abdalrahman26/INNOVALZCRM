@@ -14,6 +14,7 @@ export const STAGES = [
   { value: 'no_answer', ar: 'لم يرد', en: 'No answer', color: 'bg-slate-200 text-slate-700', bar: 'bg-slate-400' },
   { value: 'interested', ar: 'مهتم', en: 'Interested', color: 'bg-amber-100 text-amber-800', bar: 'bg-amber-500' },
   { value: 'meeting', ar: 'اجتماع محدد', en: 'Meeting set', color: 'bg-violet-100 text-violet-700', bar: 'bg-violet-500' },
+  { value: 'quote_requested', ar: 'طالب عرض سعر', en: 'Quote requested', color: 'bg-cyan-100 text-cyan-800', bar: 'bg-cyan-500' },
   { value: 'proposal', ar: 'تم إرسال عرض', en: 'Proposal sent', color: 'bg-fuchsia-100 text-fuchsia-700', bar: 'bg-fuchsia-500' },
   { value: 'negotiation', ar: 'تفاوض', en: 'Negotiation', color: 'bg-orange-100 text-orange-700', bar: 'bg-orange-500' },
   { value: 'won', ar: 'تم التعاقد ✅', en: 'Won ✅', color: 'bg-emerald-100 text-emerald-700', bar: 'bg-emerald-500' },

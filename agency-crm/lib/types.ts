@@ -87,7 +87,7 @@ export interface AppNotification {
   body: string | null;
   lead_id: string | null;
   read: boolean;
-  data?: Record<string, string> | null;
+  data?: { lead_ids?: string[]; [k: string]: string | string[] | null | undefined } | null;
   created_at: string;
 }
 

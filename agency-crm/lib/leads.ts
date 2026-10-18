@@ -13,6 +13,7 @@ export interface LeadFilters {
   assigned: string; // '' | 'none' | 'me' | userId
   followup: string; // '' | 'overdue' | 'today' | 'none'
   sort: string;
+  ids?: string[]; // ليدز محددة (مثلاً من إشعار تحويل)
 }
 
 export const EMPTY_FILTERS: LeadFilters = {
@@ -28,6 +29,7 @@ export function buildLeadsQuery(supabase: any, f: LeadFilters, meId: string, wit
       `full_name.ilike.%${s}%,phone.ilike.%${s}%,phone_normalized.ilike.%${s}%,company.ilike.%${s}%,email.ilike.%${s}%,campaign.ilike.%${s}%`,
     );
   }
+  if (f.ids?.length) q = q.in('id', f.ids);
   if (f.status) q = q.eq('status', f.status);
   if (f.source) q = q.eq('source', f.source);
   if (f.service) q = q.eq('service', f.service);
@@ -56,6 +58,7 @@ export const SORTS: Record<string, [string, boolean]> = {
   name_desc: ['full_name', false], // أبجدي ي ← أ
   next_followup_at: ['next_followup_at', true], // أقرب متابعة
   last_activity_at: ['last_activity_at', false], // آخر نشاط
+  assigned_at: ['assigned_at', false], // آخر ما اتوزع
 };
 
 export const SORT_OPTIONS = [
@@ -65,6 +68,7 @@ export const SORT_OPTIONS = [
   { value: 'name_desc', ar: 'الاسم (ي ← أ)', en: 'Name (Z → A)' },
   { value: 'next_followup_at', ar: 'أقرب متابعة', en: 'Next follow-up' },
   { value: 'last_activity_at', ar: 'آخر نشاط', en: 'Last activity' },
+  { value: 'assigned_at', ar: 'آخر ما اتوزع', en: 'Recently assigned' },
 ];
 
 export async function exportLeadsXlsx(rows: Lead[], team: Profile[], lang: Lang = 'ar', fileName?: string) {

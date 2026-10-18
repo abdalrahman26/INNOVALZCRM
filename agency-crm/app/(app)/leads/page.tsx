@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ChevronLeft, ChevronRight, Download, ExternalLink, MessageCircle, Phone, Plus, Search, Trash2, Upload, Users,
+  ChevronLeft, ChevronRight, Download, ExternalLink, Inbox, MessageCircle, Phone, Plus, Search, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '@/components/AppContext';
@@ -29,6 +29,20 @@ function readSort() {
   }
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** الفلاتر اللي جاية من اللينك (من الرئيسية أو من الإشعارات) */
+function filtersFromUrl(sp: URLSearchParams) {
+  const ids = (sp.get('ids') ?? '').split(',').filter((x) => UUID.test(x)).slice(0, 200);
+  const sort = sp.get('sort');
+  return {
+    status: sp.get('status') ?? '',
+    assigned: sp.get('assigned') ?? '',
+    followup: sp.get('followup') ?? '',
+    ids: ids.length ? ids : undefined,
+    sort: sort && sort in SORTS ? sort : null,
+  };
+}
+
 function LeadsInner() {
   const { profile, team, openLead } = useApp();
   const supabase = useSupabase();
@@ -39,12 +53,10 @@ function LeadsInner() {
   const canExport = can(profile, 'export');
   const canDelete = can(profile, 'delete');
 
-  const [filters, setFilters] = useState<LeadFilters>(() => ({
-    ...EMPTY_FILTERS,
-    status: sp.get('status') ?? '',
-    assigned: sp.get('assigned') ?? '',
-    followup: sp.get('followup') ?? '',
-  }));
+  const [filters, setFilters] = useState<LeadFilters>(() => {
+    const { sort, ...rest } = filtersFromUrl(sp);
+    return { ...EMPTY_FILTERS, ...rest, sort: sort ?? EMPTY_FILTERS.sort };
+  });
   const [qInput, setQInput] = useState('');
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<Lead[]>([]);
@@ -59,10 +71,20 @@ function LeadsInner() {
 
   // الترتيب اللي اليوزر اختاره آخر مرة (محفوظ على جهازه)
   useEffect(() => {
-    const saved = readSort();
+    const saved = filtersFromUrl(sp).sort ?? readSort();
     setFilters((f) => (f.sort === saved ? f : { ...f, sort: saved }));
     setReady(true);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // لو اللينك اتغير وإنت في نفس الصفحة (مثلاً دوست على إشعار) — نطبّق الفلاتر الجديدة
+  const spKey = sp.toString();
+  const firstUrl = useRef(true);
+  useEffect(() => {
+    if (firstUrl.current) { firstUrl.current = false; return; }
+    const { sort, ...rest } = filtersFromUrl(new URLSearchParams(spKey));
+    setFilters((f) => ({ ...f, ...rest, sort: sort ?? f.sort }));
+    setPage(1);
+  }, [spKey]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -198,6 +220,16 @@ function LeadsInner() {
           {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>↕ {L(o)}</option>)}
         </select>
       </div>
+
+      {filters.ids && (
+        <div className="card flex flex-wrap items-center gap-2 border-indigo-200 bg-indigo-50 px-4 py-3 text-sm">
+          <Inbox size={16} className="text-indigo-600" />
+          <span className="flex-1 font-semibold text-indigo-800">
+            {tr(`بتشوف الليدز اللي اتحولتلك من الإشعار (${filters.ids.length})`, `Showing the leads from the notification (${filters.ids.length})`)}
+          </span>
+          <Link href="/leads" className="btn-secondary btn-sm"><X size={14} /> {tr('عرض كل الليدز', 'Show all leads')}</Link>
+        </div>
+      )}
 
       {selected.size > 0 && (
         <div className="card flex flex-wrap items-center gap-2 border-indigo-200 bg-indigo-50 p-3">

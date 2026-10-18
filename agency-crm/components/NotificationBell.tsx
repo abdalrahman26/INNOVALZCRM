@@ -40,7 +40,12 @@ function localize(n: AppNotification, lang: Lang): { title: string; body: string
   const num = n.title.match(/\d+/)?.[0] ?? '';
   if (n.type === 'assign') {
     if (n.title.startsWith('نزلك')) return { title: `${num} new leads for you 🎯`, body: 'From auto distribution — start reaching out now' };
+    if (n.title.startsWith('اتحولك ليد:')) return { title: `Lead assigned to you: ${n.data?.lead ?? n.title.slice(11).replace(' 📥', '')} 📥`, body: 'Open it and start reaching out' };
     if (n.title.startsWith('اتحولك')) return { title: `${num} leads assigned to you 📥`, body: 'Open your leads and start reaching out' };
+  }
+  if (n.type === 'quote') {
+    const name = n.data?.lead ?? n.title.split(': ').slice(1).join(': ');
+    return { title: `📄 Client requested a quote: ${name}`, body: n.data?.by ? `Sales: ${n.data.by}` : 'Needs a quote' };
   }
   if (n.type === 'followup') {
     const name = n.title.split(': ').slice(1).join(': ');
@@ -71,8 +76,13 @@ export default function NotificationBell() {
         setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
         supabase.from('notifications').update({ read: true }).eq('id', n.id).then(() => {});
       }
+      // كل إشعار بيوديك على العميل بتاعه
+      const ids = Array.isArray(n.data?.lead_ids) ? n.data!.lead_ids!.filter(Boolean) : [];
       if (n.lead_id) openLead(n.lead_id);
-      else router.push(n.type === 'assign' ? '/leads?status=new' : '/followups');
+      else if (ids.length === 1) openLead(ids[0]);
+      else if (ids.length > 1 && ids.length <= 200) router.push(`/leads?ids=${ids.join(',')}&sort=assigned_at`);
+      else if (n.type === 'assign') router.push('/leads?assigned=me&sort=assigned_at');
+      else router.push('/followups');
     },
     [supabase, router, openLead],
   );

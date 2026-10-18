@@ -16,6 +16,8 @@ const dtf = () => get('dt', (l) => new Intl.DateTimeFormat(l, { day: 'numeric', 
 const df = () => get('d', (l) => new Intl.DateTimeFormat(l, { day: 'numeric', month: 'short', year: 'numeric' }));
 const rtf = () => get('rt', (l) => new Intl.RelativeTimeFormat(l, { numeric: 'auto' }));
 
+const tf = () => get('t', (l) => new Intl.DateTimeFormat(l, { hour: 'numeric', minute: '2-digit' }));
+export const fmtTime = (s?: string | null) => (s ? tf().format(new Date(s)) : '—');
 export const fmtDateTime = (s?: string | null) => (s ? dtf().format(new Date(s)) : '—');
 export const fmtDate = (s?: string | null) => (s ? df().format(new Date(s)) : '—');
 

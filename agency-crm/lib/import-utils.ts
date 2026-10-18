@@ -72,6 +72,7 @@ export const STATUS_WORDS: [string, string[]][] = [
   ['won', ['تم التعاقد', 'تعاقد', 'won', 'closed won', 'deal', 'اشترك', 'دفع', 'مشترك']],
   ['lost', ['خسارة', 'lost', 'مش مهتم', 'غير مهتم', 'not interested', 'رفض', 'ملغي', 'cancel']],
   ['negotiation', ['تفاوض', 'negotiation', 'negotiating']],
+  ['quote_requested', ['طالب عرض', 'طلب عرض', 'عايز عرض', 'عاوز عرض', 'محتاج عرض', 'يحتاج عرض', 'quote request', 'requested quote', 'request quote', 'requested a quote', 'needs quote', 'needs a quote']],
   ['proposal', ['عرض سعر', 'تم إرسال عرض', 'proposal', 'quotation', 'quote', 'عرض']],
   ['meeting', ['اجتماع', 'meeting', 'ميتنج', 'ميتينج', 'زيارة']],
   ['interested', ['مهتم', 'interested', 'hot', 'warm']],

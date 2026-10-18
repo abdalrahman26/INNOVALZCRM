@@ -7,6 +7,7 @@ import { AlarmClock, CalendarClock, Inbox, Sparkles, Trophy, Users } from 'lucid
 import { useApp } from '@/components/AppContext';
 import DistributionCountdown from '@/components/DistributionCountdown';
 import DealsBoard from '@/components/DealsBoard';
+import TodayAlerts from '@/components/TodayAlerts';
 import { Empty, PageLoader, StageBadge, StatCard } from '@/components/ui';
 import { useSupabase } from '@/lib/hooks';
 import { can } from '@/lib/perms';
@@ -87,6 +88,8 @@ export default function Dashboard() {
       </div>
 
       <DistributionCountdown big />
+
+      <TodayAlerts onChanged={load} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label={manager ? tr('كل الليدز', 'All leads') : tr('ليدزي', 'My leads')} value={fmtNum(stats.total)} icon={Users} onClick={() => router.push('/leads')} />
