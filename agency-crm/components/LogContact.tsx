@@ -10,6 +10,9 @@ import { fromNow, toLocalInput } from '@/lib/format';
 import { useI18n } from '@/lib/i18n';
 import type { Lead } from '@/lib/types';
 
+// المراحل اللي بيتسجل فيها قيمة (عرض سعر / صفقة جارية / تعاقد)
+const VALUE_STAGES = ['proposal', 'negotiation', 'won'];
+
 /** تسجيل تواصل: مرحلة + ملاحظة + ميعاد متابعة في خطوة واحدة */
 export default function LogContact({ lead, onSaved, bare = false }: { lead: Lead; onSaved: () => void; bare?: boolean }) {
   const { profile } = useApp();
@@ -26,6 +29,15 @@ export default function LogContact({ lead, onSaved, bare = false }: { lead: Lead
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { setStatus(lead.status); }, [lead.status]);
+
+  // اختيار "اجتماع محدد" بيفتح ميعاد الاجتماع على طول
+  function pickStage(v: string) {
+    setStatus(v);
+    if (v === 'meeting') {
+      setFtype('meeting');
+      if (!preset) setPreset('custom');
+    }
+  }
 
   async function save() {
     if (saving) return;
@@ -44,7 +56,7 @@ export default function LogContact({ lead, onSaved, bare = false }: { lead: Lead
       const patch: Record<string, unknown> = {};
       if (statusChanged) patch.status = status;
       if (status === 'lost') patch.lost_reason = lostReason;
-      if (status === 'won' && dealValue) patch.deal_value = Number(dealValue);
+      if (VALUE_STAGES.includes(status) && dealValue !== '' && Number(dealValue) !== Number(lead.deal_value ?? NaN)) patch.deal_value = Number(dealValue);
       if (Object.keys(patch).length) {
         const { error } = await supabase.from('leads').update(patch).eq('id', lead.id);
         if (error) throw error;
@@ -86,7 +98,7 @@ export default function LogContact({ lead, onSaved, bare = false }: { lead: Lead
         <label className="label">{tr('المرحلة', 'Stage')}</label>
         <div className="flex flex-wrap gap-1.5">
           {STAGES.map((s) => (
-            <button key={s.value} type="button" onClick={() => setStatus(s.value)} className={status === s.value ? 'chip-on' : 'chip-off'}>
+            <button key={s.value} type="button" onClick={() => pickStage(s.value)} className={status === s.value ? 'chip-on' : 'chip-off'}>
               {L(s)}
             </button>
           ))}
@@ -102,9 +114,13 @@ export default function LogContact({ lead, onSaved, bare = false }: { lead: Lead
           </select>
         </div>
       )}
-      {status === 'won' && (
+      {VALUE_STAGES.includes(status) && (
         <div>
-          <label className="label">{tr('قيمة التعاقد', 'Deal value')}</label>
+          <label className="label">
+            {status === 'proposal' ? tr('قيمة العرض', 'Proposal value')
+              : status === 'negotiation' ? tr('قيمة الصفقة المتوقعة', 'Expected deal value')
+                : tr('قيمة التعاقد', 'Deal value')}
+          </label>
           <input className="input" type="number" min={0} dir="ltr" value={dealValue} onChange={(e) => setDealValue(e.target.value)} />
         </div>
       )}
@@ -115,7 +131,9 @@ export default function LogContact({ lead, onSaved, bare = false }: { lead: Lead
       </div>
 
       <div>
-        <label className="label">{tr('فكّرني أتابع', 'Remind me to follow up')}</label>
+        <label className="label">
+          {status === 'meeting' ? tr('ميعاد الاجتماع', 'Meeting time') : tr('فكّرني أتابع', 'Remind me to follow up')}
+        </label>
         <div className="flex flex-wrap gap-1.5">
           <button type="button" onClick={() => setPreset('')} className={preset === '' ? 'chip-on' : 'chip-off'}>{tr('بدون', 'None')}</button>
           {FOLLOWUP_PRESETS.map((p) => (

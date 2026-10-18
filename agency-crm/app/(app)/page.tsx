@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlarmClock, CalendarClock, Inbox, Sparkles, Trophy, Users } from 'lucide-react';
 import { useApp } from '@/components/AppContext';
 import DistributionCountdown from '@/components/DistributionCountdown';
+import DealsBoard from '@/components/DealsBoard';
 import { Empty, PageLoader, StageBadge, StatCard } from '@/components/ui';
 import { useSupabase } from '@/lib/hooks';
 import { can } from '@/lib/perms';
@@ -100,6 +101,8 @@ export default function Dashboard() {
             onClick={() => router.push('/leads?assigned=none')} />
         )}
       </div>
+
+      <DealsBoard onChanged={load} />
 
       <div className="grid gap-5 lg:grid-cols-5">
         <div className="card p-4 lg:col-span-3">
