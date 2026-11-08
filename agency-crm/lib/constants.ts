@@ -48,6 +48,7 @@ export const SOURCES: Opt[] = [
   { value: 'واتساب', ar: 'واتساب', en: 'WhatsApp' },
   { value: 'ترشيح (Referral)', ar: 'ترشيح (Referral)', en: 'Referral' },
   { value: 'Cold Call', ar: 'Cold Call', en: 'Cold Call' },
+  { value: 'داتا قديمة (Cold)', ar: 'داتا قديمة (Cold)', en: 'Old data (Cold)' },
   { value: 'معرض / إيفنت', ar: 'معرض / إيفنت', en: 'Event / Exhibition' },
   { value: 'أخرى', ar: 'أخرى', en: 'Other' },
 ];
