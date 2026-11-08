@@ -168,7 +168,7 @@ export default function ReportsPage() {
           <div className="card p-4 lg:col-span-2">
             <h2 className="mb-3 text-sm font-bold">{tr('الليدز وصلت لفين', 'Where the leads are')}</h2>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-              <Stage label={tr('مهتمين', 'Interested')} hint={tr('مهتم وأعلى · من غير خسارة', 'Interested & beyond, not lost')} value={tot.interested} total={tot.assigned} tone="amber" />
+              <Stage label={tr('مهتمين', 'Interested')} hint={tr('كل المراحل ما عدا الخسارة', 'Every stage except lost')} value={tot.interested} total={tot.assigned} tone="amber" />
               <Stage label={tr('طالب عرض سعر', 'Quote requested')} value={tot.quote} total={tot.assigned} tone="cyan" />
               <Stage label={tr('تم إرسال عرض', 'Proposal sent')} value={tot.proposals} total={tot.assigned} tone="fuchsia" />
               <Stage label={tr('تفاوض', 'Negotiation')} value={tot.negotiation} total={tot.assigned} tone="orange" />

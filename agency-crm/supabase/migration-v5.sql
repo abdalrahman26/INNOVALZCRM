@@ -20,7 +20,7 @@ $$;
 create or replace function public.funnel_report(p_from timestamptz, p_to timestamptz)
 returns table(
   user_id uuid,
-  interested bigint,       -- مهتم وأعلى (من غير خسارة)
+  interested bigint,       -- أي مرحلة ما عدا الخسارة
   quote_requested bigint,  -- طالب عرض سعر
   proposals bigint,        -- تم إرسال عرض
   negotiation bigint,      -- تفاوض
@@ -31,7 +31,7 @@ returns table(
 )
 language sql stable security definer set search_path = public as $$
   select p.id,
-         count(l.id) filter (where l.status in ('interested','meeting','quote_requested','proposal','negotiation','won')),
+         count(l.id) filter (where l.status is distinct from 'lost'),
          count(l.id) filter (where l.status = 'quote_requested'),
          count(l.id) filter (where l.status = 'proposal'),
          count(l.id) filter (where l.status = 'negotiation'),
