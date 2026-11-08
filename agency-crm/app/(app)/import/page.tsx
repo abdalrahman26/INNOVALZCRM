@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '@/components/AppContext';
@@ -45,7 +45,7 @@ export default function ImportPage() {
   const [users, setUsers] = useState<string[]>([]);
   const [leadsState, setLeadsState] = useState<'new' | 'worked'>('new');
   const [ownerPick, setOwnerPick] = useState<Record<string, string>>({}); // اسم السيلز في الشيت ← يوزر في السيستم
-  const [updateExisting, setUpdateExisting] = useState(true);
+  const [updateExisting, setUpdateExistingRaw] = useState(true);
   const [noteCols, setNoteCols] = useState<string[]>([]); // كل الأعمدة اللي هتتحفظ كتعليقات
   const [statusPick, setStatusPick] = useState<Record<string, string>>({}); // قيمة الحالة في الشيت ← مرحلة في السيستم
   const [workedStage, setWorkedStage] = useState('contacted');
@@ -59,8 +59,18 @@ export default function ImportPage() {
     stageCounts: Record<string, number>; warnings: string[];
   } | null>(null);
 
-  const canAssign = can(profile, 'assign');
+  // اللي مش بيشوف كل الليدز: الاستيراد كله يروح للتوزيع التلقائي على طول ومش بيشوف الليدز بعدها
+  const restricted = !can(profile, 'view_all');
+  const canAssign = can(profile, 'assign') && !restricted;
   const canEditAll = can(profile, 'edit_all');
+  const setUpdateExisting = setUpdateExistingRaw;
+  // نهاية الاستيراد: الليدز اللي اتوزعت على غيرك (أو دخلت التوزيع) تختفي من عندك فوراً
+  async function finishBatch(id: string) {
+    try { await supabase.from('import_batches').update({ finished_at: new Date().toISOString() }).eq('id', id); } catch { /* ignore */ }
+  }
+  useEffect(() => {
+    if (restricted) { setMode('pool'); setUpdateExistingRaw(false); }
+  }, [restricted]);
   const matchOwner = useMemo(() => makeOwnerMatcher(team), [team]);
 
   // تجهيز الصفوف (بيتحسب تاني لما الإعدادات تتغير)
@@ -239,7 +249,9 @@ export default function ImportPage() {
         row.in_pool = false; // هيتوزع عليه بعد الإضافة مع إشعار
       } else {
         row.assigned_to = null;
-        row.in_pool = mode === 'pool' && !x.worked;
+        row.in_pool = restricted
+          ? !['won', 'lost'].includes(x.lead.status as string) // متعاقد/خسارة مايتوزعوش كليدز جديدة
+          : mode === 'pool' && !x.worked;
       }
       return row;
     });
@@ -257,6 +269,7 @@ export default function ImportPage() {
         toast.error(msg);
         setImportError(msg);
         setRunning(false);
+        if (batchId) await finishBatch(batchId);
         return;
       }
       ((data as { id: string }[]) ?? []).forEach((d) => inserted.add(d.id));
@@ -437,7 +450,10 @@ export default function ImportPage() {
     }
 
     const dupDb = items.length - done.length;
-    if (batchId) await supabase.from('import_batches').update({ inserted: done.length, duplicates: dupDb + prepared.dupFile }).eq('id', batchId);
+    if (batchId) {
+      await supabase.from('import_batches').update({ inserted: done.length, duplicates: dupDb + prepared.dupFile }).eq('id', batchId);
+      await finishBatch(batchId);
+    }
 
     setResult({
       total: rows.length, inserted: done.length, dupFile: prepared.dupFile, dupDb, skipped: prepared.skipped,
@@ -645,6 +661,12 @@ export default function ImportPage() {
             </div>
             <div className="space-y-3">
               <h2 className="font-bold">{tr('التوزيع', 'Assignment')}</h2>
+              {restricted ? (
+                <p className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-800">
+                  <b>{tr('الليدز هتدخل التوزيع التلقائي على طول', 'Leads go straight to auto distribution')}</b><br />
+                  <span className="text-xs">{tr('وهتوصلك منها بس اللي تتوزع عليك — زي باقي الفريق.', "You'll only see the ones distributed to you — like the rest of the team.")}</span>
+                </p>
+              ) : <>
               {map.owner && canAssign && (
                 <p className="rounded-lg bg-emerald-50 p-2 text-xs text-emerald-800">
                   {tr('الصفوف اللي فيها سيلز معروف هتروح له مباشرة. الاختيار ده للصفوف الباقية:', 'Rows with a recognized rep go straight to them. This choice is for the rest:')}
@@ -666,6 +688,7 @@ export default function ImportPage() {
                     <span className="text-xs text-slate-500">{tr('توزعهم بإيدك بعدين من صفحة الليدز', 'Assign them manually later from Leads')}</span></span></label>
               </div>
               {mode === 'now' && <UserPicker users={activeUsers} value={users} onChange={setUsers} />}
+              </>}
             </div>
           </div>
 
@@ -718,7 +741,7 @@ export default function ImportPage() {
                 </div>
               </div>
             )}
-            <label className="flex items-start gap-2 pt-2 text-sm">
+            {!restricted && <label className="flex items-start gap-2 pt-2 text-sm">
               <input type="checkbox" className="mt-1 accent-indigo-600" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />
               <span>
                 <b>{tr('لو الليد موجود قبل كده في السيستم: حدّثه', 'If a lead already exists: update it')}</b><br />
@@ -727,7 +750,7 @@ export default function ImportPage() {
                     "Assign it to the sheet's rep, add its comment, and update its stage if still “New”. No duplicates are created.")}
                 </span>
               </span>
-            </label>
+            </label>}
           </div>
 
           {importError && (

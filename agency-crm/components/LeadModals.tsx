@@ -13,7 +13,8 @@ export function AddLeadModal({ open, onClose, onSaved }: { open: boolean; onClos
   const { profile, team } = useApp();
   const supabase = useSupabase();
   const { tr, L } = useI18n();
-  const canAssign = can(profile, 'assign');
+  // اللي مش بيشوف كل الليدز: الليد اللي بيضيفه بإيده بيبقى باسمه (عشان ميضيفش ليد ويختفي منه)
+  const canAssign = can(profile, 'assign') && can(profile, 'view_all');
   const empty = { full_name: '', phone: '', email: '', company: '', job_title: '', service: '', source: '', budget: '', city: '', note: '' };
   const [f, setF] = useState(empty);
   const [assignTo, setAssignTo] = useState<string>(canAssign ? 'pool' : profile.id);

@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, Lock, Pencil, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '@/components/AppContext';
 import { Modal, NoAccess, Toggle } from '@/components/ui';
 import { can } from '@/lib/perms';
+import { useSupabase } from '@/lib/hooks';
 import { PERMISSION_FLAGS, ROLE_LABELS } from '@/lib/constants';
 import { useI18n } from '@/lib/i18n';
 import type { Profile, Role } from '@/lib/types';
@@ -28,8 +29,24 @@ export default function TeamPage() {
   const [editing, setEditing] = useState<Profile | null>(null);
   const [creating, setCreating] = useState(false);
   const { tr, L } = useI18n();
+  const supabase = useSupabase();
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   if (!can(profile, 'manage_team')) return <NoAccess />;
+
+  // التحكم السريع: السيلز يشوف ليدزه بس ولا كل الليدز
+  async function toggleViewAll(u: Profile) {
+    if (busyId) return;
+    setBusyId(u.id);
+    const next = !u.can_view_all;
+    const { data, error } = await supabase.from('profiles').update({ can_view_all: next }).eq('id', u.id).select('id');
+    setBusyId(null);
+    if (error || !data?.length) return toast.error(error?.message ?? tr('الصلاحية دي للأدمن بس', 'Admins only'));
+    toast.success(next
+      ? tr(`${u.full_name} بقى يشوف كل الليدز`, `${u.full_name} can now see all leads`)
+      : tr(`${u.full_name} بقى يشوف ليدزه بس`, `${u.full_name} now sees only their own leads`));
+    await refreshTeam();
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -45,7 +62,7 @@ export default function TeamPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[700px]">
             <thead className="bg-slate-50"><tr>
-              <th className="th">{tr('الاسم', 'Name')}</th><th className="th">{tr('الإيميل', 'Email')}</th><th className="th">{tr('الدور', 'Role')}</th><th className="th">{tr('الصلاحيات', 'Permissions')}</th><th className="th">{tr('الحالة', 'Status')}</th><th className="th" />
+              <th className="th">{tr('الاسم', 'Name')}</th><th className="th">{tr('الإيميل', 'Email')}</th><th className="th">{tr('الدور', 'Role')}</th><th className="th">{tr('بيشوف', 'Sees')}</th><th className="th">{tr('الصلاحيات', 'Permissions')}</th><th className="th">{tr('الحالة', 'Status')}</th><th className="th" />
             </tr></thead>
             <tbody>
               {team.map((u) => (
@@ -54,9 +71,26 @@ export default function TeamPage() {
                   <td className="td text-xs" dir="ltr">{u.email}</td>
                   <td className="td text-xs">{ROLE_LABELS[u.role] ? L(ROLE_LABELS[u.role]) : u.role}</td>
                   <td className="td">
+                    {u.role === 'sales' ? (
+                      <button onClick={() => toggleViewAll(u)} disabled={busyId === u.id}
+                        title={tr('دوس عشان تغيّر', 'Click to change')}
+                        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-bold transition ${u.can_view_all
+                          ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                          : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}>
+                        {u.can_view_all ? <Eye size={13} /> : <EyeOff size={13} />}
+                        {u.can_view_all ? tr('كل الليدز', 'All leads') : tr('ليدزه بس', 'Own leads only')}
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs text-slate-500"
+                        title={tr('المدير والأدمن بيشوفوا كل الليدز دايماً — غيّر الدور لـ «سيلز» لو عاوز تقفلها', 'Managers and admins always see all leads — change the role to Sales to restrict')}>
+                        <Lock size={12} /> {tr('كل الليدز (بسبب الدور)', 'All leads (role)')}
+                      </span>
+                    )}
+                  </td>
+                  <td className="td">
                     <div className="flex flex-wrap gap-1">
                       {u.role === 'admin' ? <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-700">{tr('كل الصلاحيات', 'All permissions')}</span> :
-                        PERMISSION_FLAGS.filter((p) => u[p.key]).map((p) => (
+                        PERMISSION_FLAGS.filter((p) => p.key !== 'can_view_all' && u[p.key]).map((p) => (
                           <span key={p.key} className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">{L(p)}</span>
                         ))}
                       {u.receives_auto_leads && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-700">{tr('توزيع تلقائي', 'Auto leads')}</span>}
@@ -134,13 +168,23 @@ function UserForm({ user, onClose, onSaved }: { user?: Profile; onClose: () => v
           <div>
             <label className="label">{tr('صلاحيات إضافية', 'Extra permissions')}</label>
             <div className="grid gap-2 sm:grid-cols-2">
-              {PERMISSION_FLAGS.map((p) => (
-                <label key={p.key} className="flex items-center gap-2 rounded-lg border border-slate-200 p-2 text-sm">
-                  <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={f[p.key]} onChange={(e) => set(p.key, e.target.checked)} />
-                  {L(p)}
-                </label>
-              ))}
+              {PERMISSION_FLAGS.map((p) => {
+                const locked = p.key === 'can_view_all' && f.role === 'manager';
+                return (
+                  <label key={p.key} className={`flex items-center gap-2 rounded-lg border p-2 text-sm ${p.key === 'can_view_all' ? 'border-amber-200 bg-amber-50/50' : 'border-slate-200'} ${locked ? 'opacity-60' : ''}`}>
+                    <input type="checkbox" className="h-4 w-4 accent-indigo-600" disabled={locked} checked={locked || f[p.key]} onChange={(e) => set(p.key, e.target.checked)} />
+                    {L(p)}
+                  </label>
+                );
+              })}
             </div>
+            <p className="mt-1.5 text-xs text-slate-500">
+              {f.role === 'manager'
+                ? tr('🔒 مدير المبيعات بيشوف كل الليدز دايماً. لو عاوزه يشوف ليدزه بس خلّي دوره «سيلز».', '🔒 Sales managers always see all leads. Set the role to Sales to restrict them.')
+                : f.can_view_all
+                  ? tr('👁 هيشوف كل ليدز الشركة.', '👁 Will see every lead in the company.')
+                  : tr('✅ هيشوف الليدز اللي باسمه بس.', '✅ Will see only the leads assigned to them.')}
+            </p>
           </div>
         )}
 
