@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import {
-  BarChart3, BellRing, Languages, LayoutDashboard, LogOut, Menu, ShieldCheck, Shuffle, Upload, Users, X,
+  BarChart3, BellRing, Languages, LayoutDashboard, LogOut, Menu, ShieldCheck, Shuffle, Upload, Users, X, HardDrive,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -27,6 +27,7 @@ const NAV: { href: string; ar: string; en: string; icon: LucideIcon; perm?: Perm
   { href: '/distribution', ar: 'التوزيع التلقائي', en: 'Auto distribution', icon: Shuffle, perm: 'manage_distribution' },
   { href: '/reports', ar: 'التقارير', en: 'Reports', icon: BarChart3, perm: 'reports' },
   { href: '/team', ar: 'الفريق والصلاحيات', en: 'Team & permissions', icon: ShieldCheck, perm: 'manage_team' },
+  { href: '/storage', ar: 'تخزين الملفات', en: 'File storage', icon: HardDrive, perm: 'manage_team' },
 ];
 
 export default function Shell({ profile, children }: { profile: Profile; children: React.ReactNode }) {

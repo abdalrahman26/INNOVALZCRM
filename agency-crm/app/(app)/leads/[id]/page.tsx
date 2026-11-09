@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useApp } from '@/components/AppContext';
 import LogContact from '@/components/LogContact';
 import LeadComments from '@/components/LeadComments';
+import LeadFiles from '@/components/LeadFiles';
 import LeadInfoForm, { infoLabel } from '@/components/LeadInfoForm';
 import { Empty, PageLoader, StageBadge } from '@/components/ui';
 import { useSupabase } from '@/lib/hooks';
@@ -107,7 +108,7 @@ export default function LeadPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <LogContact lead={lead} onSaved={load} />
 
@@ -143,6 +144,7 @@ export default function LeadPage() {
             )}
           </div>
 
+          <LeadFiles leadId={lead.id} leadStatus={lead.status} onChanged={load} />
           <LeadComments leadId={lead.id} notes={notes} onChanged={load} />
 
           <div className="card p-4">
@@ -167,6 +169,7 @@ export default function LeadPage() {
                         ))}
                       </>
                     )}
+                    {a.type === 'file' && <>{tr('رفع ملف', 'attached a file')}: <b className="text-slate-700">{String(a.data.name ?? '')}</b></>}
                     {a.type === 'assigned' && (a.data.to
                       ? <>{tr('حوّل الليد إلى', 'assigned the lead to')} <b>{nameOf(a.data.to)}</b></>
                       : tr('رجّع الليد للتوزيع', 'returned the lead to distribution'))}

@@ -8,6 +8,7 @@ import { Modal, Spinner, StageBadge } from './ui';
 import LogContact from './LogContact';
 import LeadComments from './LeadComments';
 import LeadInfoForm from './LeadInfoForm';
+import LeadFiles from './LeadFiles';
 import { useSupabase } from '@/lib/hooks';
 import { FOLLOWUP_TYPES, SERVICES, SOURCES, findOpt } from '@/lib/constants';
 import { fmtDateTime, fromNow, waLink } from '@/lib/format';
@@ -120,6 +121,10 @@ export default function LeadQuickModal({
           )}
 
           <LogContact lead={lead} onSaved={changed} bare />
+
+          <div className="border-t border-slate-100 pt-4">
+            <LeadFiles leadId={lead.id} leadStatus={lead.status} onChanged={changed} bare />
+          </div>
 
           <div className="border-t border-slate-100 pt-4">
             <LeadComments leadId={lead.id} notes={notes} onChanged={changed} bare />
